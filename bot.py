@@ -357,56 +357,59 @@ def handle_channel_or_invalid(message):
         scam = votes[channel_username].get("scam", 0)
         not_scam = votes[channel_username].get("not_scam", 0)
 
-        response = (
-            f"📊 Статистика голосования за @{channel_username}:\n"
-            f"🚫 Скам: {scam}\n"
-            f"✅ Не скам: {not_scam}"
-        )
-        bot.send_message(message.chat.id, response)
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn_scam = types.InlineKeyboardButton(
+            text="🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+        btn_not_scam = types.InlineKeyboardButton(
+            text="✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+        markup.add(btn_scam, btn_not_scam)
+
+        bot.send_message(message.chat.id, reply, reply_markup=markup)
     # Проверка: тег должен начинаться с @ и быть валидным
-    if not re.match(r"^@[A-Za-z0-9_]{5,32}$", text):
-        bot.send_message(
-            message.chat.id,
-            "❗ Пожалуйста, введите корректный тег канала, начинающийся с @ и без пробелов."
-        )
-        return
-
-    # Если проверка пройдена, вызываем основную логику проверки канала
-    channel_username = text[1:].lower()
-
-    try:
-        chat = bot.get_chat(text)
-    except Exception as e:
-        bot.send_message(
-            message.chat.id,
-            f"Не удалось получить данные канала, возможно бот не имеет доступа или канал не существует."
-        )
-        return
-
-    warnings, scam_score = check_scam_factors(chat)
-    init_votes_for_channel(channel_username)
-
-    if scam_score >= 3:
-        verdict = "🚨 Высокая вероятность скама!"
-    elif scam_score == 0:
-        verdict = "✅ Канал выглядит безопасным."
     else:
-        verdict = "⚠️ Есть подозрительные признаки."
+        if not re.match(r"^@[A-Za-z0-9_]{5,32}$", text):
+            bot.send_message(
+                message.chat.id,
+                "❗ Пожалуйста, введите корректный тег канала, начинающийся с @ и без пробелов."
+            )
+            return
 
-    reply = f"{verdict}\n\n"
-    if warnings:
-        reply += "Подробности:\n" + "\n".join(f"- {w}"
+        # Если проверка пройдена, вызываем основную логику проверки канала
+        channel_username = text[1:].lower()
+
+        try:
+            chat = bot.get_chat(text)
+        except Exception as e:
+            bot.send_message(
+                message.chat.id,
+                f"Не удалось получить данные канала, возможно бот не имеет доступа или канал не существует."
+            )
+            return
+
+        warnings, scam_score = check_scam_factors(chat)
+        init_votes_for_channel(channel_username)
+
+        if scam_score >= 3:
+            verdict = "🚨 Высокая вероятность скама!"
+        elif scam_score == 0:
+            verdict = "✅ Канал выглядит безопасным."
+        else:
+            verdict = "⚠️ Есть подозрительные признаки."
+
+        reply = f"{verdict}\n\n"
+        if warnings:
+            reply += "Подробности:\n" + "\n".join(f"- {w}"
                                               for w in warnings) + "\n\n"
-    reply += "Голосуй, чтобы помочь другим! \nЕсли хочешь проверить другой канал — отправь его @username."
+        reply += "Голосуй, чтобы помочь другим! \nЕсли хочешь проверить другой канал — отправь его @username."
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_scam = types.InlineKeyboardButton(
-        text="🚫 Скам", callback_data=f"vote_scam_{channel_username}")
-    btn_not_scam = types.InlineKeyboardButton(
-        text="✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
-    markup.add(btn_scam, btn_not_scam)
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn_scam = types.InlineKeyboardButton(
+            text="🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+        btn_not_scam = types.InlineKeyboardButton(
+            text="✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+        markup.add(btn_scam, btn_not_scam)
 
-    bot.send_message(message.chat.id, reply, reply_markup=markup)
+        bot.send_message(message.chat.id, reply, reply_markup=markup)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
