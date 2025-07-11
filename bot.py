@@ -415,6 +415,29 @@ def handle_vote(call):
     bot.send_message(call.message.chat.id, stat_text)
 
 
+@bot.message_handler(commands=["status"])
+def status_command(message):
+    args = message.text.strip().split()
+    if len(args) != 2 or not args[1].startswith("@"):
+        bot.send_message(message.chat.id, "❗ Используй формат: /status @канал")
+        return
+
+    channel_username = args[1][1:].lower()
+    votes = load_json(VOTES_FILE)
+
+    if channel_username not in votes:
+        bot.send_message(message.chat.id, f"🔍 Нет данных о голосовании за @{channel_username}.")
+        return
+
+    scam = votes[channel_username].get("scam", 0)
+    not_scam = votes[channel_username].get("not_scam", 0)
+
+    response = (
+        f"📊 Статистика голосования за @{channel_username}:\n"
+        f"🚫 Скам: {scam}\n"
+        f"✅ Не скам: {not_scam}"
+    )
+    bot.send_message(message.chat.id, response)
 
 
 keep_alive()
