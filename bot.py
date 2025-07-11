@@ -343,26 +343,26 @@ def handle_channel_or_invalid(message):
     text = message.text.strip()
     if text.startswith('/status'):
          args = message.text.strip().split()
-    if len(args) != 2 or not args[1].startswith("@"):
-        bot.send_message(message.chat.id, "❗ Используй формат: /status @канал")
-        return
+        if len(args) != 2 or not args[1].startswith("@"):
+            bot.send_message(message.chat.id, "❗ Используй формат: /status @канал")
+            return
 
-    channel_username = args[1][1:].lower()
-    votes = load_json(VOTES_FILE)
+        channel_username = args[1][1:].lower()
+        votes = load_json(VOTES_FILE)
 
-    if channel_username not in votes:
-        bot.send_message(message.chat.id, f"🔍 Нет данных о голосовании за @{channel_username}.")
-        return
+        if channel_username not in votes:
+            bot.send_message(message.chat.id, f"🔍 Нет данных о голосовании за @{channel_username}.")
+            return
 
-    scam = votes[channel_username].get("scam", 0)
-    not_scam = votes[channel_username].get("not_scam", 0)
+        scam = votes[channel_username].get("scam", 0)
+        not_scam = votes[channel_username].get("not_scam", 0)
 
-    response = (
-        f"📊 Статистика голосования за @{channel_username}:\n"
-        f"🚫 Скам: {scam}\n"
-        f"✅ Не скам: {not_scam}"
-    )
-    bot.send_message(message.chat.id, response)
+        response = (
+            f"📊 Статистика голосования за @{channel_username}:\n"
+            f"🚫 Скам: {scam}\n"
+            f"✅ Не скам: {not_scam}"
+        )
+        bot.send_message(message.chat.id, response)
     # Проверка: тег должен начинаться с @ и быть валидным
     if not re.match(r"^@[A-Za-z0-9_]{5,32}$", text):
         bot.send_message(
