@@ -342,7 +342,7 @@ import re
 def handle_channel_or_invalid(message):
     text = message.text.strip()
     if text.startswith('/status'):
-         args = message.text.strip().split()
+        args = message.text.strip().split()
         if len(args) != 2 or not args[1].startswith("@"):
             bot.send_message(message.chat.id, "❗ Используй формат: /status @канал")
             return
