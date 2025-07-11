@@ -364,7 +364,7 @@ def handle_channel_or_invalid(message):
             text="✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
         markup.add(btn_scam, btn_not_scam)
 
-        bot.send_message(message.chat.id, reply, reply_markup=markup)
+        bot.send_message(message.chat.id, reply_markup=markup)
     # Проверка: тег должен начинаться с @ и быть валидным
     else:
         if not re.match(r"^@[A-Za-z0-9_]{5,32}$", text):
