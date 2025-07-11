@@ -415,19 +415,7 @@ def handle_vote(call):
     bot.send_message(call.message.chat.id, stat_text)
 
 
-def ping():
-    while True:
-        try:
-            bot.send_message(
-                ADMIN_ID,
-                f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Пинг: бот живой"
-            )
-        except Exception as e:
-            print("Ошибка при пинге:", e)
-        time.sleep(60)
 
-
-threading.Thread(target=ping, daemon=True).start()
 
 keep_alive()
 
