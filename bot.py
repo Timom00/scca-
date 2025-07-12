@@ -363,7 +363,7 @@ def handle_channel_or_invalid(message):
         btn_not_scam = types.InlineKeyboardButton(
             text="✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
         markup.add(btn_scam, btn_not_scam)
-        reply = 📊 Статистика голосования
+        reply = f"📊 Статистика голосования для канала @{channel_username}:\n🚫 Скам: {scam}\n✅ Не скам: {not_scam}"
         bot.send_message(message.chat.id, reply, reply_markup=markup)
     # Проверка: тег должен начинаться с @ и быть валидным
     else:
