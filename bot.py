@@ -308,7 +308,7 @@ def fallback(message):
     bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки.")
 
 # 🚀 Запуск бота
-if _name_ == "_main_":
+if __name__ == "__main__":
     keep_alive()
     print("Бот запущен...")
     bot.infinity_polling()
