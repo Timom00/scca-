@@ -214,7 +214,7 @@ def start_handler(message):
         bot.reply_to(message, "Не удалось отправить стартовую картинку.")
 
 # 📦 Обработка @тегов каналов
-@bot.message_handler(func=lambda m: m.text and m.text.startswith("@")))
+@bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
 def channel_check_handler(message):
     channel_tag = message.text.strip()
     
