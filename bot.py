@@ -1,13 +1,12 @@
 #7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U
 #1465940524
 
+from keep_alive import keep_alive
 import telebot
 import json
+import re
 import datetime
 from telebot import types
-
-# ✅ Если ты хочешь работать на Render — импортируем веб-сервер
-from keep_alive import keep_alive
 
 # 🔐 Токен бота
 TOKEN = "7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U"
@@ -17,11 +16,57 @@ bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 REPORTS_FILE = "reports.json"
 VOTES_FILE = "votes.json"
 
-# ❗️ Слова, по которым определяется возможный скам
+# ❗ Слова для определения скама
 SCAM_KEYWORDS = [
     "free", "bonus", "investment", "crypto", "earn", "quick", "fast",
     "money", "scam", "fake", "click", "win"
 ]
+
+# =============================================
+# ФУНКЦИИ ГОЛОСОВАНИЯ ИЗ ПЕРВОГО КОДА (НАЧАЛО)
+# =============================================
+def load_json(file):
+    try:
+        with open(file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_json(file, data):
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def init_votes_for_channel(channel_username):
+    votes = load_json(VOTES_FILE)
+    if channel_username not in votes:
+        votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
+        save_json(VOTES_FILE, votes)
+
+def update_vote(channel_username, user_id, vote_type):
+    votes = load_json(VOTES_FILE)
+    if channel_username not in votes:
+        votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
+
+    if user_id in votes[channel_username]["voters"]:
+        return False
+
+    if vote_type == "scam":
+        votes[channel_username]["scam"] += 1
+    else:
+        votes[channel_username]["not_scam"] += 1
+        
+    votes[channel_username]["voters"].append(user_id)
+    save_json(VOTES_FILE, votes)
+    return True
+
+def get_vote_stats(channel_username):
+    votes = load_json(VOTES_FILE)
+    if channel_username not in votes:
+        return (0, 0)
+    return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
+# =============================================
+# ФУНКЦИИ ГОЛОСОВАНИЯ ИЗ ПЕРВОГО КОДА (КОНЕЦ)
+# =============================================
 
 # 🔍 Проверка текста на скам-ключи
 def contains_scam_keywords(text):
@@ -97,34 +142,6 @@ def save_report(report):
     with open(REPORTS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# 💾 Сохранение голоса
-def save_vote(channel_tag, vote):
-    try:
-        with open(VOTES_FILE, "r", encoding="utf-8") as f:
-            votes = json.load(f)
-    except:
-        votes = {}
-
-    if channel_tag not in votes:
-        votes[channel_tag] = {"scam": 0, "not_scam": 0}
-
-    if vote == "scam":
-        votes[channel_tag]["scam"] += 1
-    elif vote == "not_scam":
-        votes[channel_tag]["not_scam"] += 1
-
-    with open(VOTES_FILE, "w", encoding="utf-8") as f:
-        json.dump(votes, f, indent=4, ensure_ascii=False)
-
-# 📥 Получение статистики по голосам
-def get_votes(channel_tag):
-    try:
-        with open(VOTES_FILE, "r", encoding="utf-8") as f:
-            votes = json.load(f)
-        return votes.get(channel_tag, {"scam": 0, "not_scam": 0})
-    except:
-        return {"scam": 0, "not_scam": 0}
-
 # 🚀 Команда /start
 @bot.message_handler(commands=["start"])
 def start_handler(message):
@@ -134,15 +151,15 @@ def start_handler(message):
                 message.chat.id,
                 photo,
                 caption=("✨" * 10 + "\n"
-                         "         🤖 *Этот бот умеет:*         \n"
+                         "         🤖 Этот бот умеет:         \n"
                          "-----------------------------------\n"
                          "🔍 Проверять каналы на скам\n"
                          "👍 Позволяет голосовать за канал\n"
                          "📊 Показывать статистику голосов\n"
                          "🛡 Помогать избегать мошенников\n"
                          "-----------------------------------\n"
-                         "Отправь `@username` канала, чтобы проверить его!\n"
-                         "Отправь `/status @username`, чтобы узнать статус!"),
+                         "Отправь @username канала, чтобы проверить его!\n"
+                         "Отправь /status @username, чтобы узнать статус!"),
                 parse_mode="Markdown"
             )
     except Exception as e:
@@ -152,6 +169,14 @@ def start_handler(message):
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
 def channel_check_handler(message):
     channel_tag = message.text.strip()
+    
+    # Проверка формата тега (из первого кода)
+    if not re.match(r"^@[A-Za-z0-9_]{5,32}$", channel_tag):
+        bot.reply_to(
+            message,
+            "❗ Пожалуйста, введите корректный тег канала, начинающийся с @ и без пробелов."
+        )
+        return
 
     try:
         chat = bot.get_chat(channel_tag)
@@ -160,6 +185,10 @@ def channel_check_handler(message):
         return
 
     warnings, scam_score = check_scam_factors(chat)
+    
+    # Инициализация системы голосования для канала
+    channel_username = channel_tag[1:].lower()
+    init_votes_for_channel(channel_username)
 
     report_lines = [
         f"📊 Проверка канала: {channel_tag}",
@@ -170,7 +199,7 @@ def channel_check_handler(message):
     ]
 
     if warnings:
-        report_lines.append("⚠️ Предупреждения:")
+        report_lines.append("⚠ Предупреждения:")
         report_lines += [f" - {w}" for w in warnings]
     else:
         report_lines.append("✅ Подозрений не найдено.")
@@ -182,19 +211,19 @@ def channel_check_handler(message):
     except:
         pass
 
-    # 🗳 Голосование
-    try:
-        markup = types.InlineKeyboardMarkup()
-        markup.add(
-            types.InlineKeyboardButton("💀 Скам", callback_data=f"vote_scam|{channel_tag}"),
-            types.InlineKeyboardButton("✅ Не скам", callback_data=f"vote_not_scam|{channel_tag}")
-        )
-        print(f"[DEBUG] Отправка голосования по каналу {channel_tag}")
-    try:
-        bot.send_message(message.chat.id, "Как ты думаешь, это скам?", reply_markup=markup)
-    except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Ошибка при отправке голосования: {e}")
-
+    # 🗳 Кнопки голосования (из первого кода)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_scam = types.InlineKeyboardButton(
+        "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+    btn_not_scam = types.InlineKeyboardButton(
+        "✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+    markup.add(btn_scam, btn_not_scam)
+    
+    bot.send_message(
+        message.chat.id, 
+        "Как ты думаешь, это скам?", 
+        reply_markup=markup
+    )
 
     # 💾 Сохраняем отчёт
     save_report({
@@ -205,25 +234,34 @@ def channel_check_handler(message):
         "user_id": message.from_user.id
     })
 
-# ✅ Обработка голосов
+# ✅ Обработка голосов (из первого кода)
 @bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
 def handle_vote(call):
-    action, channel_tag = call.data.split("|")
-    vote_type = "scam" if action == "vote_scam" else "not_scam"
-    save_vote(channel_tag, vote_type)
-    bot.answer_callback_query(call.id, "Спасибо за голос!")
+    data = call.data.split("_")
+    if len(data) < 3:
+        bot.answer_callback_query(call.id, "❗ Ошибка данных голосования.")
+        return
 
-@bot.message_handler(commands=["testvote"])
-def test_vote(message):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("Тест 💀", callback_data="vote_scam|@test"),
-        types.InlineKeyboardButton("Тест ✅", callback_data="vote_not_scam|@test")
+    vote_type = data[1] 
+    channel_username = "_".join(data[2:])
+    user_id = call.from_user.id
+
+    success = update_vote(channel_username, user_id, vote_type)
+    if not success:
+        bot.answer_callback_query(call.id, "❗ Ты уже голосовал за этот канал.")
+        return
+
+    bot.answer_callback_query(call.id, "✅ Спасибо за голос!")
+    
+    scam_votes, not_scam_votes = get_vote_stats(channel_username)
+    stat_text = (
+        f"📊 Обновленная статистика для @{channel_username}:\n"
+        f"🚫 Скам: {scam_votes}\n"
+        f"✅ Не скам: {not_scam_votes}"
     )
-    bot.send_message(message.chat.id, "🧪 Это тест голосования. Работает?", reply_markup=markup)
+    bot.send_message(call.message.chat.id, stat_text)
 
-
-# 📊 Команда /status
+# 📊 Команда /status (модифицированная)
 @bot.message_handler(commands=["status"])
 def status_handler(message):
     parts = message.text.split()
@@ -232,7 +270,10 @@ def status_handler(message):
         return
 
     channel_tag = parts[1]
-    votes = get_votes(channel_tag)
+    channel_username = channel_tag[1:].lower()
+    
+    # Получаем статистику голосования
+    scam_votes, not_scam_votes = get_vote_stats(channel_username)
 
     try:
         chat = bot.get_chat(channel_tag)
@@ -242,30 +283,24 @@ def status_handler(message):
         title = "Неизвестно"
         channel_id = "Неизвестно"
 
+    # Формируем сообщение со статистикой
     msg = (
         f"📊 Статистика канала {channel_tag}\n"
         f"Название: {title}\n"
         f"ID: {channel_id}\n\n"
-        f"💀 Голосов 'скам': {votes['scam']}\n"
-        f"✅ Голосов 'не скам': {votes['not_scam']}"
+        f"🚫 Голосов 'Скам': {scam_votes}\n"
+        f"✅ Голосов 'Не скам': {not_scam_votes}"
     )
 
-    bot.reply_to(message, msg)
-# Команда /export — отправка файлов с голосами и отчётами (только для владельца)
-@bot.message_handler(commands=["export"])
-def export_handler(message):
-    ADMIN_ID = 1465940524  # Замени на свой Telegram ID (число)
-    
-    if message.from_user.id == ADMIN_ID:
-        try:
-            with open("votes.json", "rb") as v:
-                bot.send_document(message.chat.id, v, caption="🗳 Голоса")
-            with open("reports.json", "rb") as r:
-                bot.send_document(message.chat.id, r, caption="📋 Отчёты")
-        except Exception as e:
-            bot.reply_to(message, "❌ Не удалось отправить файлы.")
-    else:
-        bot.reply_to(message, "⛔ У тебя нет доступа к этой команде.")
+    # Добавляем кнопки для голосования
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn_scam = types.InlineKeyboardButton(
+        "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+    btn_not_scam = types.InlineKeyboardButton(
+        "✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+    markup.add(btn_scam, btn_not_scam)
+
+    bot.reply_to(message, msg, reply_markup=markup)
 
 # 📥 Обработка всех остальных сообщений
 @bot.message_handler(func=lambda m: True)
@@ -273,7 +308,7 @@ def fallback(message):
     bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки.")
 
 # 🚀 Запуск бота
-if __name__ == "__main__":
-    keep_alive()  # 🟢 Включаем фоновый веб-сервер
+if _name_ == "_main_":
+    keep_alive()
     print("Бот запущен...")
     bot.infinity_polling()
