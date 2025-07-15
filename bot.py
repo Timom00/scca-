@@ -4,54 +4,56 @@
 import telebot
 import json
 import datetime
+from telebot import types
 
-TOKEN = "7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U"  # Замените на свой токен
-bot = telebot.TeleBot(TOKEN)
+# ✅ Если ты хочешь работать на Render — импортируем веб-сервер
+from keep_alive import keep_alive
 
-# Файл для хранения отчётов и голосов
+# 🔐 Токен бота
+TOKEN = "7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U"
+bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
+
+# 📁 Файлы для хранения отчётов и голосов
 REPORTS_FILE = "reports.json"
 VOTES_FILE = "votes.json"
 
-# Ключевые слова, указывающие на возможный скам
+# ❗️ Слова, по которым определяется возможный скам
 SCAM_KEYWORDS = [
     "free", "bonus", "investment", "crypto", "earn", "quick", "fast",
     "money", "scam", "fake", "click", "win"
 ]
 
-# Функция проверки текста на ключевые слова
+# 🔍 Проверка текста на скам-ключи
 def contains_scam_keywords(text):
     if not text:
         return False
     text = text.lower()
     return any(kw in text for kw in SCAM_KEYWORDS)
 
-# Проверка подозрительных слов в ссылке
+# 🔗 Проверка ссылки на скамность
 def check_url_scammy(url):
     if not url:
         return False
     url = url.lower()
     return any(kw in url for kw in SCAM_KEYWORDS)
 
-# Основная функция оценки канала
+# 📊 Основная проверка канала
 def check_scam_factors(chat):
-    warnings = []   # Список предупреждений
-    scam_score = 0  # Общий балл
+    warnings = []
+    scam_score = 0
 
-    # Проверка количества подписчиков
     try:
         members_count = bot.get_chat_members_count(chat.id)
         if members_count < 50:
             warnings.append(f"Подписчиков всего {members_count} — мало.")
             scam_score += 1
     except:
-        pass  # Если не можем получить — просто пропускаем
+        pass
 
-    # Название канала
     if contains_scam_keywords(chat.title):
         warnings.append("В названии канала есть подозрительные слова.")
         scam_score += 2
 
-    # Описание канала
     try:
         description = bot.get_chat(chat.id).description
         if description and contains_scam_keywords(description):
@@ -60,7 +62,6 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # Ссылка на канал
     try:
         invite_link = bot.export_chat_invite_link(chat.id)
         if invite_link and check_url_scammy(invite_link):
@@ -69,7 +70,6 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # Проверка наличия аватарки
     try:
         if bot.get_chat(chat.id).photo is None:
             warnings.append("У канала нет аватарки.")
@@ -77,7 +77,6 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # Проверка наличия закреплённого сообщения
     try:
         if bot.get_chat(chat.id).pinned_message is None:
             warnings.append("У канала нет закреплённого сообщения.")
@@ -87,20 +86,18 @@ def check_scam_factors(chat):
 
     return warnings, scam_score
 
-# Сохраняем отчёт в reports.json
+# 💾 Сохранение отчёта
 def save_report(report):
     try:
         with open(REPORTS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
     except:
         data = []
-
     data.append(report)
-
     with open(REPORTS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# Сохраняем голос
+# 💾 Сохранение голоса
 def save_vote(channel_tag, vote):
     try:
         with open(VOTES_FILE, "r", encoding="utf-8") as f:
@@ -119,7 +116,7 @@ def save_vote(channel_tag, vote):
     with open(VOTES_FILE, "w", encoding="utf-8") as f:
         json.dump(votes, f, indent=4, ensure_ascii=False)
 
-# Получение голосов по каналу
+# 📥 Получение статистики по голосам
 def get_votes(channel_tag):
     try:
         with open(VOTES_FILE, "r", encoding="utf-8") as f:
@@ -128,25 +125,42 @@ def get_votes(channel_tag):
     except:
         return {"scam": 0, "not_scam": 0}
 
-# Команда /start
+# 🚀 Команда /start
 @bot.message_handler(commands=["start"])
 def start_handler(message):
-    bot.reply_to(message, "Привет! Отправь тег канала (@example), чтобы я его проверил на скам. После проверки ты сможешь проголосовать.")
+    try:
+        with open("_655fbf78-b4c0-4ecc-81cc-e50ef3a8830f.jpeg", "rb") as photo:
+            bot.send_photo(
+                message.chat.id,
+                photo,
+                caption=("✨" * 10 + "\n"
+                         "         🤖 *Этот бот умеет:*         \n"
+                         "-----------------------------------\n"
+                         "🔍 Проверять каналы на скам\n"
+                         "👍 Позволяет голосовать за канал\n"
+                         "📊 Показывать статистику голосов\n"
+                         "🛡 Помогать избегать мошенников\n"
+                         "-----------------------------------\n"
+                         "Отправь `@username` канала, чтобы проверить его!\n"
+                         "Отправь `/status @username`, чтобы узнать статус!"),
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        bot.reply_to(message, "Не удалось отправить стартовую картинку.")
 
-# Обработка канала по тегу (@)
+# 📦 Обработка @тегов каналов
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
 def channel_check_handler(message):
     channel_tag = message.text.strip()
 
     try:
         chat = bot.get_chat(channel_tag)
-    except Exception:
+    except:
         bot.reply_to(message, "❌ Не удалось получить канал. Убедись, что бот имеет к нему доступ.")
         return
 
     warnings, scam_score = check_scam_factors(chat)
 
-    # Формируем текст отчёта
     report_lines = [
         f"📊 Проверка канала: {channel_tag}",
         f"Название: {chat.title}",
@@ -161,11 +175,9 @@ def channel_check_handler(message):
     else:
         report_lines.append("✅ Подозрений не найдено.")
 
-    # Отправляем отчёт
     report_text = "\n".join(report_lines)
     bot.reply_to(message, report_text)
 
-    # Сохраняем отчёт
     save_report({
         "channel_tag": channel_tag,
         "check_date": datetime.datetime.utcnow().isoformat(),
@@ -174,15 +186,15 @@ def channel_check_handler(message):
         "user_id": message.from_user.id
     })
 
-    # Отправляем голосование
-    markup = telebot.types.InlineKeyboardMarkup()
+    # ⏳ Отправка голосования
+    markup = types.InlineKeyboardMarkup()
     markup.add(
-        telebot.types.InlineKeyboardButton("💀 Скам", callback_data=f"vote_scam|{channel_tag}"),
-        telebot.types.InlineKeyboardButton("✅ Не скам", callback_data=f"vote_not_scam|{channel_tag}")
+        types.InlineKeyboardButton("💀 Скам", callback_data=f"vote_scam|{channel_tag}"),
+        types.InlineKeyboardButton("✅ Не скам", callback_data=f"vote_not_scam|{channel_tag}")
     )
     bot.send_message(message.chat.id, "Как ты думаешь, это скам?", reply_markup=markup)
 
-# Обработка кнопок голосования
+# ✅ Обработка голосов
 @bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
 def handle_vote(call):
     action, channel_tag = call.data.split("|")
@@ -190,7 +202,7 @@ def handle_vote(call):
     save_vote(channel_tag, vote_type)
     bot.answer_callback_query(call.id, "Спасибо за голос!")
 
-# Команда /status для просмотра голосов по каналу
+# 📊 Команда /status
 @bot.message_handler(commands=["status"])
 def status_handler(message):
     parts = message.text.split()
@@ -218,13 +230,29 @@ def status_handler(message):
     )
 
     bot.reply_to(message, msg)
+# Команда /export — отправка файлов с голосами и отчётами (только для владельца)
+@bot.message_handler(commands=["export"])
+def export_handler(message):
+    ADMIN_ID = 1465940524  # Замени на свой Telegram ID (число)
+    
+    if message.from_user.id == ADMIN_ID:
+        try:
+            with open("votes.json", "rb") as v:
+                bot.send_document(message.chat.id, v, caption="🗳 Голоса")
+            with open("reports.json", "rb") as r:
+                bot.send_document(message.chat.id, r, caption="📋 Отчёты")
+        except Exception as e:
+            bot.reply_to(message, "❌ Не удалось отправить файлы.")
+    else:
+        bot.reply_to(message, "⛔ У тебя нет доступа к этой команде.")
 
-# Обработка остальных сообщений
+# 📥 Обработка всех остальных сообщений
 @bot.message_handler(func=lambda m: True)
 def fallback(message):
     bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки.")
 
-# Запуск бота
+# 🚀 Запуск бота
 if __name__ == "__main__":
+    keep_alive()  # 🟢 Включаем фоновый веб-сервер
     print("Бот запущен...")
     bot.infinity_polling()
