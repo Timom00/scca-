@@ -189,9 +189,12 @@ def channel_check_handler(message):
             types.InlineKeyboardButton("💀 Скам", callback_data=f"vote_scam|{channel_tag}"),
             types.InlineKeyboardButton("✅ Не скам", callback_data=f"vote_not_scam|{channel_tag}")
         )
+        print(f"[DEBUG] Отправка голосования по каналу {channel_tag}")
+    try:
         bot.send_message(message.chat.id, "Как ты думаешь, это скам?", reply_markup=markup)
     except Exception as e:
-        bot.reply_to(message, f"⚠️ Ошибка при показе голосования: {e}")
+        bot.send_message(message.chat.id, f"❌ Ошибка при отправке голосования: {e}")
+
 
     # 💾 Сохраняем отчёт
     save_report({
@@ -209,6 +212,16 @@ def handle_vote(call):
     vote_type = "scam" if action == "vote_scam" else "not_scam"
     save_vote(channel_tag, vote_type)
     bot.answer_callback_query(call.id, "Спасибо за голос!")
+
+@bot.message_handler(commands=["testvote"])
+def test_vote(message):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("Тест 💀", callback_data="vote_scam|@test"),
+        types.InlineKeyboardButton("Тест ✅", callback_data="vote_not_scam|@test")
+    )
+    bot.send_message(message.chat.id, "🧪 Это тест голосования. Работает?", reply_markup=markup)
+
 
 # 📊 Команда /status
 @bot.message_handler(commands=["status"])
