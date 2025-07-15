@@ -7,6 +7,7 @@ import json
 import re
 import datetime
 from telebot import types
+import os
 
 # 🔐 Токен бота
 TOKEN = "7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U"
@@ -16,7 +17,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 REPORTS_FILE = "reports.json"
 VOTES_FILE = "votes.json"
 
-# ❗ Полный список слов для определения скама (как в первом коде)
+# ❗ Полный список слов для определения скама
 SCAM_KEYWORDS = [
     "заработок", "легкие деньги", "быстрый доход", "инвестиции", "крипта",
     "100% прибыль", "без риска", "гарантированный доход", "пассивный доход",
@@ -42,7 +43,6 @@ SCAM_KEYWORDS = [
     "финансовая афера", "пирамида", "схема", "быстрый обман", "скрытый обман",
     "сделать деньги быстро", "получить деньги", "сделай деньги",
     "обман пользователей", "платформа",
-    # Английские слова:
     "free", "bonus", "investment", "crypto", "earn", "quick", "fast", "money",
     "scam", "fake", "fraud", "win", "winner", "lottery", "prize", "guaranteed",
     "profit", "cash", "deal", "limited offer", "click here", "subscribe",
@@ -55,16 +55,20 @@ SCAM_KEYWORDS = [
 ]
 
 # =============================================
-# ФУНКЦИИ ГОЛОСОВАНИЯ
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ГОЛОСАМИ
 # =============================================
 def load_json(file):
-    try:
-        with open(file, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return {}
+    """Загружает данные из JSON-файла"""
+    if os.path.exists(file):
+        try:
+            with open(file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
 
 def save_json(file, data):
+    """Сохраняет данные в JSON-файл"""
     with open(file, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -74,12 +78,12 @@ def init_votes_for_channel(channel_username):
     if channel_username not in votes:
         votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
         save_json(VOTES_FILE, votes)
-    return votes[channel_username]  # Возвращаем запись
+    return votes[channel_username]
 
 def update_vote(channel_username, user_id, vote_type):
+    """Обновляет голосование и сразу сохраняет изменения"""
     votes = load_json(VOTES_FILE)
     
-    # Инициализируем, если записи нет
     if channel_username not in votes:
         votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
     
@@ -92,19 +96,16 @@ def update_vote(channel_username, user_id, vote_type):
         votes[channel_username]["not_scam"] += 1
         
     votes[channel_username]["voters"].append(user_id)
+    
     save_json(VOTES_FILE, votes)
     return True
 
 def get_vote_stats(channel_username):
-    """Всегда возвращает актуальную статистику, инициализируя при необходимости"""
+    """Возвращает текущую статистику голосов"""
     votes = load_json(VOTES_FILE)
-    
-    # Если записи нет - создаём
-    if channel_username not in votes:
-        init_votes_for_channel(channel_username)
-        votes = load_json(VOTES_FILE)  # Перезагружаем данные
-    
-    return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
+    if channel_username in votes:
+        return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
+    return 0, 0
 # =============================================
 
 # 🔍 Проверка текста на скам-ключи
@@ -112,9 +113,12 @@ def contains_scam_keywords(text):
     if not text:
         return False
     text = text.lower()
-    return any(kw in text for kw in SCAM_KEYWORDS)
+    for kw in SCAM_KEYWORDS:
+        if kw in text:
+            return True
+    return False
 
-# 🔗 Проверка ссылки на скамность (как в первом коде)
+# 🔗 Проверка ссылки на скамность
 def check_url_scammy(url):
     scam_url_keywords = [
         "free", "bonus", "investment", "crypto", "earn", "quick", "fast", "money"
@@ -122,14 +126,16 @@ def check_url_scammy(url):
     if not url:
         return False
     url = url.lower()
-    return any(kw in url for kw in scam_url_keywords)
+    for kw in scam_url_keywords:
+        if kw in url:
+            return True
+    return False
 
-# 📊 ПОЛНАЯ проверка канала (как в первом коде)
+# 📊 ПОЛНАЯ проверка канала
 def check_scam_factors(chat):
     warnings = []
     scam_score = 0
 
-    # 1. Проверка количества подписчиков
     try:
         members_count = bot.get_chat_members_count(chat.id)
         if members_count < 50:
@@ -138,12 +144,10 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # 2. Проверка названия
     if contains_scam_keywords(chat.title):
         warnings.append("В названии канала есть подозрительные слова.")
         scam_score += 2
 
-    # 3. Проверка описания
     try:
         description = bot.get_chat(chat.id).description
         if description and contains_scam_keywords(description):
@@ -152,7 +156,6 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # 4. Проверка пригласительной ссылки
     try:
         invite_link = bot.export_chat_invite_link(chat.id)
         if invite_link and check_url_scammy(invite_link):
@@ -161,7 +164,6 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # 5. Проверка аватарки
     try:
         if bot.get_chat(chat.id).photo is None:
             warnings.append("У канала нет аватарки.")
@@ -169,7 +171,6 @@ def check_scam_factors(chat):
     except:
         pass
 
-    # 6. Проверка закреплённого сообщения
     try:
         if bot.get_chat(chat.id).pinned_message is None:
             warnings.append("У канала нет закреплённого сообщения.")
@@ -218,7 +219,6 @@ def start_handler(message):
 def channel_check_handler(message):
     channel_tag = message.text.strip()
     
-    # Проверка формата тега
     if not re.match(r"^@[A-Za-z0-9_]{5,32}$", channel_tag):
         bot.reply_to(
             message,
@@ -232,14 +232,12 @@ def channel_check_handler(message):
         bot.reply_to(message, f"❌ Не удалось получить канал: {e}")
         return
 
-    # Полная проверка канала
     warnings, scam_score = check_scam_factors(chat)
     
-    # Инициализация системы голосования для канала
     channel_username = channel_tag[1:].lower()
-    vote_record = init_votes_for_channel(channel_username)  # Инициализируем и получаем запись
+    init_votes_for_channel(channel_username)
+    scam_votes, not_scam_votes = get_vote_stats(channel_username)
 
-    # Формируем вердикт
     if scam_score >= 3:
         verdict = "🚨 Высокая вероятность скама!"
     elif scam_score == 0:
@@ -247,7 +245,6 @@ def channel_check_handler(message):
     else:
         verdict = "⚠ Есть подозрительные признаки."
 
-    # Формируем отчёт
     report_lines = [verdict]
     
     if warnings:
@@ -255,18 +252,13 @@ def channel_check_handler(message):
         report_lines += [f"- {w}" for w in warnings]
     
     report_lines.append(f"\n📊 Скам-баллы: {scam_score}/7")
-    report_lines.append(f"🚫 Голосов 'Скам': {vote_record['scam']}")
-    report_lines.append(f"✅ Голосов 'Не скам': {vote_record['not_scam']}")
+    report_lines.append(f"🚫 Голосов 'Скам': {scam_votes}")
+    report_lines.append(f"✅ Голосов 'Не скам': {not_scam_votes}")
 
     report_text = "\n".join(report_lines)
 
-    # Отправляем отчёт
-    try:
-        bot.reply_to(message, report_text, parse_mode="Markdown")
-    except:
-        pass
+    bot.reply_to(message, report_text, parse_mode="Markdown")
 
-    # Кнопки голосования
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_scam = types.InlineKeyboardButton(
         "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
@@ -280,7 +272,6 @@ def channel_check_handler(message):
         reply_markup=markup
     )
 
-    # Сохраняем отчёт
     save_report({
         "channel_tag": channel_tag,
         "check_date": datetime.datetime.utcnow().isoformat(),
@@ -308,7 +299,6 @@ def handle_vote(call):
 
     bot.answer_callback_query(call.id, "✅ Спасибо за голос!")
     
-    # Получаем обновлённую статистику
     scam_votes, not_scam_votes = get_vote_stats(channel_username)
     stat_text = (
         f"📊 Обновленная статистика для @{channel_username}:\n"
@@ -316,7 +306,6 @@ def handle_vote(call):
         f"✅ Не скам: {not_scam_votes}"
     )
     
-    # Обновляем сообщение с кнопками
     try:
         markup = types.InlineKeyboardMarkup(row_width=2)
         btn_scam = types.InlineKeyboardButton(
@@ -332,7 +321,7 @@ def handle_vote(call):
             reply_markup=markup
         )
     except Exception as e:
-        bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.")
+        bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.", reply_markup=markup)
 
 # 📊 Команда /status
 @bot.message_handler(commands=["status"])
@@ -345,22 +334,19 @@ def status_handler(message):
     channel_tag = parts[1]
     channel_username = channel_tag[1:].lower()
     
-    # Получаем статистику (функция сама инициализирует при необходимости)
     scam_votes, not_scam_votes = get_vote_stats(channel_username)
 
     try:
         chat = bot.get_chat(channel_tag)
         title = chat.title
         channel_id = chat.id
-        
-        # Делаем быструю проверку канала
         warnings, scam_score = check_scam_factors(chat)
-    except:
+    except Exception as e:
         title = "Неизвестно"
         channel_id = "Неизвестно"
         scam_score = 0
+        warnings = []
 
-    # Формируем сообщение
     msg = (
         f"📊 Статистика канала {channel_tag}\n"
         f"🔖 Название: {title}\n"
@@ -372,7 +358,6 @@ def status_handler(message):
         f"✅ Голосов 'Не скам': {not_scam_votes}"
     )
 
-    # Кнопки для голосования
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_scam = types.InlineKeyboardButton(
         "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
@@ -389,6 +374,10 @@ def fallback(message):
 
 # 🚀 Запуск бота
 if __name__ == "__main__":
+    if not os.path.exists(VOTES_FILE):
+        with open(VOTES_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+    
     keep_alive()
     print("Бот запущен...")
     bot.infinity_polling()
