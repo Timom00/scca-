@@ -155,8 +155,8 @@ def channel_check_handler(message):
 
     try:
         chat = bot.get_chat(channel_tag)
-    except:
-        bot.reply_to(message, "❌ Не удалось получить канал. Убедись, что бот имеет к нему доступ.")
+    except Exception as e:
+        bot.reply_to(message, f"❌ Не удалось получить канал: {e}")
         return
 
     warnings, scam_score = check_scam_factors(chat)
@@ -176,8 +176,24 @@ def channel_check_handler(message):
         report_lines.append("✅ Подозрений не найдено.")
 
     report_text = "\n".join(report_lines)
-    bot.reply_to(message, report_text)
 
+    try:
+        bot.reply_to(message, report_text)
+    except:
+        pass
+
+    # 🗳 Голосование
+    try:
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("💀 Скам", callback_data=f"vote_scam|{channel_tag}"),
+            types.InlineKeyboardButton("✅ Не скам", callback_data=f"vote_not_scam|{channel_tag}")
+        )
+        bot.send_message(message.chat.id, "Как ты думаешь, это скам?", reply_markup=markup)
+    except Exception as e:
+        bot.reply_to(message, f"⚠️ Ошибка при показе голосования: {e}")
+
+    # 💾 Сохраняем отчёт
     save_report({
         "channel_tag": channel_tag,
         "check_date": datetime.datetime.utcnow().isoformat(),
@@ -185,14 +201,6 @@ def channel_check_handler(message):
         "warnings": warnings,
         "user_id": message.from_user.id
     })
-
-    # ⏳ Отправка голосования
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("💀 Скам", callback_data=f"vote_scam|{channel_tag}"),
-        types.InlineKeyboardButton("✅ Не скам", callback_data=f"vote_not_scam|{channel_tag}")
-    )
-    bot.send_message(message.chat.id, "Как ты думаешь, это скам?", reply_markup=markup)
 
 # ✅ Обработка голосов
 @bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
