@@ -169,7 +169,7 @@ def check_scam_factors(chat):
             warnings.append(f"Слишком ровное количество подписчиков ({members_count}) — возможны боты.")
             scam_score += 1
     except Exception as e:
-        warnings.append(f"⚠ Не удалось проверить количество подписчиков: {str(e)}")
+        warnings.append(f"⚠ Не удалось проверить количество подписчиков")
 
     # 2. Проверка названия
     title = chat.title
@@ -201,7 +201,7 @@ def check_scam_factors(chat):
                 warnings.append("Используется давление через срочность — техника мошенников.")
                 scam_score += 1
     except Exception as e:
-        warnings.append(f"⚠ Не удалось проверить описание: {str(e)}")
+        warnings.append(f"⚠ Не удалось проверить описание")
 
     # 5. Проверка пригласительной ссылки
     try:
@@ -216,7 +216,7 @@ def check_scam_factors(chat):
                 warnings.append("Используется сокращенная ссылка — может скрывать фишинговый URL.")
                 scam_score += 1
     except Exception as e:
-        warnings.append(f"⚠ Не удалось проверить пригласительную ссылку: {str(e)}")
+        warnings.append(f"⚠ Не удалось проверить пригласительную ссылку")
 
     # 6. Проверка аватарки
     try:
@@ -224,7 +224,7 @@ def check_scam_factors(chat):
             warnings.append("Отсутствует аватарка — признак временного канала.")
             scam_score += 1
     except Exception as e:
-        warnings.append(f"⚠ Не удалось проверить аватарку: {str(e)}")
+        warnings.append(f"⚠ Не удалось проверить аватарку")
 
     # 7. Проверка закреплённого сообщения
     try:
@@ -243,7 +243,7 @@ def check_scam_factors(chat):
                 warnings.append("В закреплённом сообщении просят деньги — явный признак скама.")
                 scam_score += 3
     except Exception as e:
-        warnings.append(f"⚠ Не удалось проверить закрепленное сообщение: {str(e)}")
+        warnings.append(f"⚠ Не удалось проверить закрепленное сообщение")
 
     # 8. Проверка даты создания канала (если доступно)
     try:
