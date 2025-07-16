@@ -9,13 +9,15 @@ import datetime
 from telebot import types
 import os
 
-# 🔐 Токен бота
+# 🔐 Токен бота и ID администратора
 TOKEN = "7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U"
-bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
+ADMIN_ID = 1465940524
+bot = telebot.TeleBot(TOKEN)
 
-# 📁 Файлы для хранения отчётов и голосов
-REPORTS_FILE = "reports.json"
+# 📁 Файлы для хранения данных
+SCAMLIST_FILE = "scamlist.json"
 VOTES_FILE = "votes.json"
+REPORTS_FILE = "reports.json"
 
 # ❗ Полный список слов для определения скама
 SCAM_KEYWORDS = [
@@ -55,7 +57,7 @@ SCAM_KEYWORDS = [
 ]
 
 # =============================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ГОЛОСАМИ
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ (ИСПРАВЛЕННЫЕ)
 # =============================================
 def load_json(file):
     """Загружает данные из JSON-файла"""
@@ -81,13 +83,15 @@ def init_votes_for_channel(channel_username):
     return votes[channel_username]
 
 def update_vote(channel_username, user_id, vote_type):
-    """Обновляет голосование и сразу сохраняет изменения"""
+    """Обновляет голосование с проверкой уникальности"""
     votes = load_json(VOTES_FILE)
     
+    # Инициализируем, если записи нет
     if channel_username not in votes:
         votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
     
-    if user_id in votes[channel_username]["voters"]:
+    # Проверяем, голосовал ли уже пользователь
+    if str(user_id) in votes[channel_username]["voters"]:
         return False
 
     if vote_type == "scam":
@@ -95,7 +99,8 @@ def update_vote(channel_username, user_id, vote_type):
     else:
         votes[channel_username]["not_scam"] += 1
         
-    votes[channel_username]["voters"].append(user_id)
+    # Сохраняем ID пользователя как строку
+    votes[channel_username]["voters"].append(str(user_id))
     
     save_json(VOTES_FILE, votes)
     return True
@@ -185,6 +190,9 @@ def save_report(report):
     try:
         with open(REPORTS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+        # Убедимся, что data - это список
+        if not isinstance(data, list):
+            data = []
     except:
         data = []
     data.append(report)
@@ -199,17 +207,18 @@ def start_handler(message):
             bot.send_photo(
                 message.chat.id,
                 photo,
-                caption=("✨" * 10 + "\n"
-                         "         🤖 Этот бот умеет:         \n"
-                         "-----------------------------------\n"
-                         "🔍 Проверять каналы на скам\n"
-                         "👍 Позволяет голосовать за канал\n"
-                         "📊 Показывать статистику голосов\n"
-                         "🛡 Помогать избегать мошенников\n"
-                         "-----------------------------------\n"
-                         "Отправь @username канала, чтобы проверить его!\n"
-                         "Отправь /status @username, чтобы узнать статус!"),
-                parse_mode="Markdown"
+                caption=(
+                    "✨✨✨✨✨✨✨✨✨✨\n"
+                    "         🤖 Этот бот умеет:         \n"
+                    "-----------------------------------\n"
+                    "🔍 Проверять каналы на скам\n"
+                    "👍 Позволяет голосовать за канал\n"
+                    "📊 Показывать статистику голосов\n"
+                    "🛡 Помогать избегать мошенников\n"
+                    "-----------------------------------\n"
+                    "Отправь @username канала, чтобы проверить его!\n"
+                    "Отправь /status @username, чтобы узнать статус!"
+                )
             )
     except Exception as e:
         bot.reply_to(message, "Не удалось отправить стартовую картинку.")
@@ -257,7 +266,7 @@ def channel_check_handler(message):
 
     report_text = "\n".join(report_lines)
 
-    bot.reply_to(message, report_text, parse_mode="Markdown")
+    bot.reply_to(message, report_text)
 
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_scam = types.InlineKeyboardButton(
@@ -280,7 +289,7 @@ def channel_check_handler(message):
         "user_id": message.from_user.id
     })
 
-# ✅ Обработка голосов
+# ✅ Обработка голосов (ИСПРАВЛЕННАЯ)
 @bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
 def handle_vote(call):
     data = call.data.split("_")
@@ -365,7 +374,32 @@ def status_handler(message):
         "✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
     markup.add(btn_scam, btn_not_scam)
 
-    bot.reply_to(message, msg, reply_markup=markup, parse_mode="Markdown")
+    bot.reply_to(message, msg, reply_markup=markup)
+
+# 📤 Команда /export (только для администратора)
+@bot.message_handler(commands=["export"])
+def export_handler(message):
+    if message.from_user.id != ADMIN_ID:
+        bot.reply_to(message, "⛔ У тебя нет доступа к этой команде.")
+        return
+
+    try:
+        # Отправляем файл с голосами
+        if os.path.exists(VOTES_FILE):
+            with open(VOTES_FILE, "rb") as v:
+                bot.send_document(message.chat.id, v, caption="🗳 Файл голосований")
+        else:
+            bot.reply_to(message, "Файл голосований не найден.")
+        
+        # Отправляем файл с отчетами
+        if os.path.exists(REPORTS_FILE):
+            with open(REPORTS_FILE, "rb") as r:
+                bot.send_document(message.chat.id, r, caption="📋 Файл отчетов")
+        else:
+            bot.reply_to(message, "Файл отчетов не найден.")
+            
+    except Exception as e:
+        bot.reply_to(message, f"❌ Ошибка при экспорте: {e}")
 
 # 📥 Обработка всех остальных сообщений
 @bot.message_handler(func=lambda m: True)
@@ -373,9 +407,18 @@ def fallback(message):
     bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки.")
 
 # 🚀 Запуск бота
-if __name__ == "__main__":
+if _name_ == "__main__":
+    # Инициализация файлов при первом запуске
     if not os.path.exists(VOTES_FILE):
         with open(VOTES_FILE, "w", encoding="utf-8") as f:
+            json.dump({}, f)
+    
+    if not os.path.exists(REPORTS_FILE):
+        with open(REPORTS_FILE, "w", encoding="utf-8") as f:
+            json.dump([], f)
+    
+    if not os.path.exists(SCAMLIST_FILE):
+        with open(SCAMLIST_FILE, "w", encoding="utf-8") as f:
             json.dump({}, f)
     
     keep_alive()
