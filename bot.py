@@ -440,7 +440,7 @@ def fallback(message):
     bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки.")
 
 # 🚀 Запуск бота
-if _name_ == "_main_":
+if __name__ == "__main__":
     # Инициализация файлов при первом запуске
     if not os.path.exists(VOTES_FILE):
         with open(VOTES_FILE, "w", encoding="utf-8") as f:
