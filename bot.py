@@ -57,7 +57,7 @@ SCAM_KEYWORDS = [
 ]
 
 # =============================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ (ИСПРАВЛЕННЫЕ)
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ (ПЕРЕРАБОТАННЫЕ)
 # =============================================
 def load_json(file):
     """Загружает данные из JSON-файла"""
@@ -109,7 +109,7 @@ def get_vote_stats(channel_username):
     """Возвращает текущую статистику голосов"""
     votes = load_json(VOTES_FILE)
     if channel_username in votes:
-        return votes["scam_" + channel_username]["scam"], votes["scam_" + channel_username]["not_scam"]
+        return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
     return 0, 0
 # =============================================
 
@@ -223,7 +223,7 @@ def start_handler(message):
     except Exception as e:
         bot.reply_to(message, "Не удалось отправить стартовую картинку.")
 
-# 📦 Обработка @тегов каналов
+# 📦 Обработка @тегов каналов (ИСПРАВЛЕНО ФОРМИРОВАНИЕ CALLBACK_DATA)
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
 def channel_check_handler(message):
     channel_tag = message.text.strip()
@@ -269,10 +269,12 @@ def channel_check_handler(message):
     bot.reply_to(message, report_text)
 
     markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    # ИСПРАВЛЕНО: используем новый формат callback_data
     btn_scam = types.InlineKeyboardButton(
-        "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+        "🚫 Скам", callback_data=f"scam|{channel_username}")
     btn_not_scam = types.InlineKeyboardButton(
-        "✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+        "✅ Не скам", callback_data=f"not_scam|{channel_username}")
     markup.add(btn_scam, btn_not_scam)
     
     bot.send_message(
@@ -289,16 +291,21 @@ def channel_check_handler(message):
         "user_id": message.from_user.id
     })
 
-# ✅ Обработка голосов (ИСПРАВЛЕННАЯ)
-@bot.callback_query_handler(func=lambda call: call.data.startswith("vote_"))
+# ✅ Обработка голосов (ПОЛНОСТЬЮ ПЕРЕРАБОТАННАЯ)
+@bot.callback_query_handler(func=lambda call: True)
 def handle_vote(call):
-    data = call.data.split("_")
-    if len(data) < 3:
+    # Проверяем формат callback_data
+    if '|' not in call.data:
         bot.answer_callback_query(call.id, "❗ Ошибка данных голосования.")
         return
+        
+    # Разбиваем данные на тип голоса и username канала
+    vote_type, channel_username = call.data.split('|', 1)
+    
+    if vote_type not in ['scam', 'not_scam']:
+        bot.answer_callback_query(call.id, "❗ Неизвестный тип голоса.")
+        return
 
-    vote_type = data[1] 
-    channel_username = "_".join(data[2:])
     user_id = call.from_user.id
 
     success = update_vote(channel_username, user_id, vote_type)
@@ -318,9 +325,9 @@ def handle_vote(call):
     try:
         markup = types.InlineKeyboardMarkup(row_width=2)
         btn_scam = types.InlineKeyboardButton(
-            "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+            "🚫 Скам", callback_data=f"scam|{channel_username}")
         btn_not_scam = types.InlineKeyboardButton(
-            "✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+            "✅ Не скам", callback_data=f"not_scam|{channel_username}")
         markup.add(btn_scam, btn_not_scam)
         
         bot.edit_message_text(
@@ -332,7 +339,7 @@ def handle_vote(call):
     except Exception as e:
         bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.", reply_markup=markup)
 
-# 📊 Команда /status
+# 📊 Команда /status (ИСПРАВЛЕННЫЙ ФОРМАТ CALLBACK_DATA)
 @bot.message_handler(commands=["status"])
 def status_handler(message):
     parts = message.text.split()
@@ -369,9 +376,9 @@ def status_handler(message):
 
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn_scam = types.InlineKeyboardButton(
-        "🚫 Скам", callback_data=f"vote_scam_{channel_username}")
+        "🚫 Скам", callback_data=f"scam|{channel_username}")
     btn_not_scam = types.InlineKeyboardButton(
-        "✅ Не скам", callback_data=f"vote_not_scam_{channel_username}")
+        "✅ Не скам", callback_data=f"not_scam|{channel_username}")
     markup.add(btn_scam, btn_not_scam)
 
     bot.reply_to(message, msg, reply_markup=markup)
