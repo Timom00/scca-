@@ -223,106 +223,53 @@ def start_handler(message):
     except Exception as e:
         bot.reply_to(message, "Не удалось отправить стартовую картинку.")
 
-# 📦 Обработка @тегов каналов (ИСПРАВЛЕНО ФОРМИРОВАНИЕ CALLBACK_DATA)
+# 📦 Обработка @тегов каналов
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
 def channel_check_handler(message):
-    channel_tag = message.text.strip()
-    
-    if not re.match(r"^@[A-Za-z0-9_]{5,32}$", channel_tag):
-        bot.reply_to(
-            message,
-            "❗ Пожалуйста, введите корректный тег канала, начинающийся с @ и без пробелов."
-        )
-        return
-
     try:
-        chat = bot.get_chat(channel_tag)
-    except Exception as e:
-        bot.reply_to(message, f"❌ Не удалось получить канал: {e}")
-        return
-
-    warnings, scam_score = check_scam_factors(chat)
-    
-    channel_username = channel_tag[1:].lower()
-    init_votes_for_channel(channel_username)
-    scam_votes, not_scam_votes = get_vote_stats(channel_username)
-
-    if scam_score >= 3:
-        verdict = "🚨 Высокая вероятность скама!"
-    elif scam_score == 0:
-        verdict = "✅ Канал выглядит безопасным."
-    else:
-        verdict = "⚠ Есть подозрительные признаки."
-
-    report_lines = [verdict]
-    
-    if warnings:
-        report_lines.append("\n⚠ Предупреждения:")
-        report_lines += [f"- {w}" for w in warnings]
-    
-    report_lines.append(f"\n📊 Скам-баллы: {scam_score}/7")
-    report_lines.append(f"🚫 Голосов 'Скам': {scam_votes}")
-    report_lines.append(f"✅ Голосов 'Не скам': {not_scam_votes}")
-
-    report_text = "\n".join(report_lines)
-
-    bot.reply_to(message, report_text)
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    
-    # ИСПРАВЛЕНО: используем новый формат callback_data
-    btn_scam = types.InlineKeyboardButton(
-        "🚫 Скам", callback_data=f"scam|{channel_username}")
-    btn_not_scam = types.InlineKeyboardButton(
-        "✅ Не скам", callback_data=f"not_scam|{channel_username}")
-    markup.add(btn_scam, btn_not_scam)
-    
-    bot.send_message(
-        message.chat.id, 
-        "Как ты думаешь, это скам?", 
-        reply_markup=markup
-    )
-
-    save_report({
-        "channel_tag": channel_tag,
-        "check_date": datetime.datetime.utcnow().isoformat(),
-        "scam_score": scam_score,
-        "warnings": warnings,
-        "user_id": message.from_user.id
-    })
-
-# ✅ Обработка голосов (ПОЛНОСТЬЮ ПЕРЕРАБОТАННАЯ)
-@bot.callback_query_handler(func=lambda call: True)
-def handle_vote(call):
-    # Проверяем формат callback_data
-    if '|' not in call.data:
-        bot.answer_callback_query(call.id, "❗ Ошибка данных голосования.")
-        return
+        channel_tag = message.text.strip()
         
-    # Разбиваем данные на тип голоса и username канала
-    vote_type, channel_username = call.data.split('|', 1)
-    
-    if vote_type not in ['scam', 'not_scam']:
-        bot.answer_callback_query(call.id, "❗ Неизвестный тип голоса.")
-        return
+        if not re.match(r"^@[A-Za-z0-9_]{5,32}$", channel_tag):
+            bot.reply_to(
+                message,
+                "❗ Пожалуйста, введите корректный тег канала, начинающийся с @ и без пробелов."
+            )
+            return
 
-    user_id = call.from_user.id
+        try:
+            chat = bot.get_chat(channel_tag)
+        except Exception as e:
+            bot.reply_to(message, "❌ Не удалось получить данные канала. Возможно, канал не существует или бот не имеет к нему доступа.")
+            return
 
-    success = update_vote(channel_username, user_id, vote_type)
-    if not success:
-        bot.answer_callback_query(call.id, "❗ Ты уже голосовал за этот канал.")
-        return
+        warnings, scam_score = check_scam_factors(chat)
+        
+        channel_username = channel_tag[1:].lower()
+        init_votes_for_channel(channel_username)
+        scam_votes, not_scam_votes = get_vote_stats(channel_username)
 
-    bot.answer_callback_query(call.id, "✅ Спасибо за голос!")
-    
-    scam_votes, not_scam_votes = get_vote_stats(channel_username)
-    stat_text = (
-        f"📊 Обновленная статистика для @{channel_username}:\n"
-        f"🚫 Скам: {scam_votes}\n"
-        f"✅ Не скам: {not_scam_votes}"
-    )
-    
-    try:
+        if scam_score >= 3:
+            verdict = "🚨 Высокая вероятность скама!"
+        elif scam_score == 0:
+            verdict = "✅ Канал выглядит безопасным."
+        else:
+            verdict = "⚠ Есть подозрительные признаки."
+
+        report_lines = [verdict]
+        
+        if warnings:
+            report_lines.append("\n⚠ Причины:")
+            for i, warning in enumerate(warnings, 1):
+                report_lines.append(f"{i}. {warning}")
+        
+        report_lines.append(f"\n📊 Скам-баллы: {scam_score}/7")
+        report_lines.append(f"🚫 Голосов 'Скам': {scam_votes}")
+        report_lines.append(f"✅ Голосов 'Не скам': {not_scam_votes}")
+
+        report_text = "\n".join(report_lines)
+
+        bot.reply_to(message, report_text)
+
         markup = types.InlineKeyboardMarkup(row_width=2)
         btn_scam = types.InlineKeyboardButton(
             "🚫 Скам", callback_data=f"scam|{channel_username}")
@@ -330,67 +277,143 @@ def handle_vote(call):
             "✅ Не скам", callback_data=f"not_scam|{channel_username}")
         markup.add(btn_scam, btn_not_scam)
         
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=stat_text,
+        bot.send_message(
+            message.chat.id, 
+            "Как ты думаешь, это скам?", 
             reply_markup=markup
         )
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.", reply_markup=markup)
 
-# 📊 Команда /status (ИСПРАВЛЕННЫЙ ФОРМАТ CALLBACK_DATA)
+        save_report({
+            "channel_tag": channel_tag,
+            "check_date": datetime.datetime.utcnow().isoformat(),
+            "scam_score": scam_score,
+            "warnings": warnings,
+            "user_id": message.from_user.id
+        })
+    except Exception as e:
+        print(f"Ошибка при обработке канала: {e}")
+        bot.reply_to(message, "⚠ Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.")
+
+# ✅ Обработка голосов
+@bot.callback_query_handler(func=lambda call: True)
+def handle_vote(call):
+    try:
+        # Проверяем формат callback_data
+        if '|' not in call.data:
+            bot.answer_callback_query(call.id, "❗ Ошибка данных голосования.")
+            return
+            
+        # Разбиваем данные на тип голоса и username канала
+        vote_type, channel_username = call.data.split('|', 1)
+        
+        if vote_type not in ['scam', 'not_scam']:
+            bot.answer_callback_query(call.id, "❗ Неизвестный тип голоса.")
+            return
+
+        user_id = call.from_user.id
+
+        success = update_vote(channel_username, user_id, vote_type)
+        if not success:
+            bot.answer_callback_query(call.id, "❗ Ты уже голосовал за этот канал.")
+            return
+
+        bot.answer_callback_query(call.id, "✅ Спасибо за голос!")
+        
+        scam_votes, not_scam_votes = get_vote_stats(channel_username)
+        stat_text = (
+            f"📊 Обновленная статистика для @{channel_username}:\n"
+            f"🚫 Скам: {scam_votes}\n"
+            f"✅ Не скам: {not_scam_votes}"
+        )
+        
+        try:
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            btn_scam = types.InlineKeyboardButton(
+                "🚫 Скам", callback_data=f"scam|{channel_username}")
+            btn_not_scam = types.InlineKeyboardButton(
+                "✅ Не скам", callback_data=f"not_scam|{channel_username}")
+            markup.add(btn_scam, btn_not_scam)
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=stat_text,
+                reply_markup=markup
+            )
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.", reply_markup=markup)
+    except Exception as e:
+        print(f"Ошибка при обработке голоса: {e}")
+        try:
+            bot.answer_callback_query(call.id, "⚠ Произошла ошибка. Попробуйте позже.")
+        except:
+            pass
+
+# 📊 Команда /status
 @bot.message_handler(commands=["status"])
 def status_handler(message):
-    parts = message.text.split()
-    if len(parts) != 2 or not parts[1].startswith("@"):
-        bot.reply_to(message, "❌ Используй формат: /status @канал")
-        return
-
-    channel_tag = parts[1]
-    channel_username = channel_tag[1:].lower()
-    
-    scam_votes, not_scam_votes = get_vote_stats(channel_username)
-
     try:
-        chat = bot.get_chat(channel_tag)
-        title = chat.title
-        channel_id = chat.id
-        warnings, scam_score = check_scam_factors(chat)
+        parts = message.text.split()
+        if len(parts) != 2 or not parts[1].startswith("@"):
+            bot.reply_to(message, "❌ Используй формат: /status @канал")
+            return
+
+        channel_tag = parts[1]
+        channel_username = channel_tag[1:].lower()
+        
+        scam_votes, not_scam_votes = get_vote_stats(channel_username)
+
+        try:
+            chat = bot.get_chat(channel_tag)
+            title = chat.title
+            channel_id = chat.id
+            warnings, scam_score = check_scam_factors(chat)
+        except Exception as e:
+            bot.reply_to(message, "❌ Не удалось получить данные канала. Возможно, канал не существует или бот не имеет к нему доступа.")
+            return
+
+        msg = (
+            f"📊 Статистика канала {channel_tag}\n"
+            f"🔖 Название: {title}\n"
+            f"🆔 ID: {channel_id}\n\n"
+            f"🔍 Результаты проверки:\n"
+            f"⚠ Скам-баллы: {scam_score}/7\n"
+        )
+        
+        # Добавляем причины (первые 3)
+        if warnings:
+            msg += f"\n🔸 Причины ({len(warnings)}):\n"
+            for i, warning in enumerate(warnings[:3], 1):
+                msg += f"{i}. {warning}\n"
+            if len(warnings) > 3:
+                msg += f"🔸 ...и еще {len(warnings)-3} других причин\n"
+        
+        msg += (
+            f"\n🗳 Голосование сообщества:\n"
+            f"🚫 Голосов 'Скам': {scam_votes}\n"
+            f"✅ Голосов 'Не скам': {not_scam_votes}"
+        )
+
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn_scam = types.InlineKeyboardButton(
+            "🚫 Скам", callback_data=f"scam|{channel_username}")
+        btn_not_scam = types.InlineKeyboardButton(
+            "✅ Не скам", callback_data=f"not_scam|{channel_username}")
+        markup.add(btn_scam, btn_not_scam)
+
+        bot.reply_to(message, msg, reply_markup=markup)
     except Exception as e:
-        title = "Неизвестно"
-        channel_id = "Неизвестно"
-        scam_score = 0
-        warnings = []
-
-    msg = (
-        f"📊 Статистика канала {channel_tag}\n"
-        f"🔖 Название: {title}\n"
-        f"🆔 ID: {channel_id}\n\n"
-        f"🔍 Результаты проверки:\n"
-        f"⚠ Скам-баллы: {scam_score}/7\n\n"
-        f"🗳 Голосование сообщества:\n"
-        f"🚫 Голосов 'Скам': {scam_votes}\n"
-        f"✅ Голосов 'Не скам': {not_scam_votes}"
-    )
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_scam = types.InlineKeyboardButton(
-        "🚫 Скам", callback_data=f"scam|{channel_username}")
-    btn_not_scam = types.InlineKeyboardButton(
-        "✅ Не скам", callback_data=f"not_scam|{channel_username}")
-    markup.add(btn_scam, btn_not_scam)
-
-    bot.reply_to(message, msg, reply_markup=markup)
+        print(f"Ошибка в команде /status: {e}")
+        bot.reply_to(message, "⚠ Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже.")
 
 # 📤 Команда /export (только для администратора)
 @bot.message_handler(commands=["export"])
 def export_handler(message):
-    if message.from_user.id != ADMIN_ID:
-        bot.reply_to(message, "⛔ У тебя нет доступа к этой команде.")
-        return
-
     try:
+        if message.from_user.id != ADMIN_ID:
+            bot.reply_to(message, "⛔ У тебя нет доступа к этой команде.")
+            return
+
         # Отправляем файл с голосами
         if os.path.exists(VOTES_FILE):
             with open(VOTES_FILE, "rb") as v:
@@ -406,12 +429,13 @@ def export_handler(message):
             bot.reply_to(message, "Файл отчетов не найден.")
             
     except Exception as e:
-        bot.reply_to(message, f"❌ Ошибка при экспорте: {e}")
+        print(f"Ошибка при экспорте: {e}")
+        bot.reply_to(message, "⚠ Произошла ошибка при экспорте данных.")
 
 # 📥 Обработка всех остальных сообщений
 @bot.message_handler(func=lambda m: True)
 def fallback(message):
-    bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки.")
+    bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки или используй /status @канал.")
 
 # 🚀 Запуск бота
 if __name__ == "__main__":
