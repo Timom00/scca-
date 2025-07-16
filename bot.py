@@ -107,9 +107,9 @@ def update_vote(channel_username, user_id, vote_type):
 
 def get_vote_stats(channel_username):
     """Возвращает текущую статистику голосов"""
-    votes = load_json("scam_" + VOTES_FILE)
+    votes = load_json(VOTES_FILE)
     if channel_username in votes:
-        return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
+        return votes["scam_" + channel_username]["scam"], votes["scam_" + channel_username]["not_scam"]
     return 0, 0
 # =============================================
 
