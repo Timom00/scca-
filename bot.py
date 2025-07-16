@@ -400,14 +400,14 @@ def status_handler(message):
         f"✅ Голосов 'Не скам': {not_scam_votes}"
     )
 
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_scam = types.InlineKeyboardButton(
-        "🚫 Скам", callback_data=f"scam|{channel_username}")
-    btn_not_scam = types.InlineKeyboardButton(
-        "✅ Не скам", callback_data=f"not_scam|{channel_username}")
-    markup.add(btn_scam, btn_not_scam)
+    #markup = types.InlineKeyboardMarkup(row_width=2)
+    #btn_scam = types.InlineKeyboardButton(
+     #   "🚫 Скам", callback_data=f"scam|{channel_username}")
+    #btn_not_scam = types.InlineKeyboardButton(
+     #   "✅ Не скам", callback_data=f"not_scam|{channel_username}")
+    #markup.add(btn_scam, btn_not_scam)
 
-    bot.reply_to(message, msg, reply_markup=markup)
+    bot.reply_to(message, msg)#, reply_markup=markup)
 
 # 📤 Команда /export (только для администратора)
 @bot.message_handler(commands=["export"])
