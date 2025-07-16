@@ -19,7 +19,7 @@ SCAMLIST_FILE = "scamlist.json"
 VOTES_FILE = "votes.json"
 REPORTS_FILE = "reports.json"
 
-# ❗ Полный список слов для определения скама
+# ❗ Расширенный список слов для определения скама
 SCAM_KEYWORDS = [
     "заработок", "легкие деньги", "быстрый доход", "инвестиции", "крипта",
     "100% прибыль", "без риска", "гарантированный доход", "пассивный доход",
@@ -44,7 +44,11 @@ SCAM_KEYWORDS = [
     "фейк", "обмануть", "ввод денег", "вывод денег", "криптовалюта",
     "финансовая афера", "пирамида", "схема", "быстрый обман", "скрытый обман",
     "сделать деньги быстро", "получить деньги", "сделай деньги",
-    "обман пользователей", "платформа",
+    "обман пользователей", "платформа", "контакт", "пишите", "direct", 
+    "личка", "telegram.me", "whatsapp", "viber", "лично", "персонально", 
+    "гарант", "результат", "проверено", "отзывы", "доказательства", 
+    "реферал", "партнер", "бонус", "акция", "скидка", "промокод", 
+    "ограничено", "последний", "успей",
     "free", "bonus", "investment", "crypto", "earn", "quick", "fast", "money",
     "scam", "fake", "fraud", "win", "winner", "lottery", "prize", "guaranteed",
     "profit", "cash", "deal", "limited offer", "click here", "subscribe",
@@ -56,8 +60,15 @@ SCAM_KEYWORDS = [
     "pyramid scheme", "bonus code", "secret", "exclusive", "urgent", "risk free"
 ]
 
+# Список подозрительных доменов
+SUSPICIOUS_DOMAINS = [
+    "bit.ly", "t.me", "tinyurl.com", "cutt.ly", "shorte.st", "clck.ru",
+    "cutt.us", "bc.vc", "adf.ly", "ouo.io", "shrinkme.io", "linkvertise.com",
+    "shortconnect.com", "link.tl", "shorturl.at", "rebrand.ly"
+]
+
 # =============================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ (ПЕРЕРАБОТАННЫЕ)
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ
 # =============================================
 def load_json(file):
     """Загружает данные из JSON-файла"""
@@ -111,7 +122,6 @@ def get_vote_stats(channel_username):
     if channel_username in votes:
         return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
     return 0, 0
-# =============================================
 
 # 🔍 Проверка текста на скам-ключи
 def contains_scam_keywords(text):
@@ -125,62 +135,146 @@ def contains_scam_keywords(text):
 
 # 🔗 Проверка ссылки на скамность
 def check_url_scammy(url):
-    scam_url_keywords = [
-        "free", "bonus", "investment", "crypto", "earn", "quick", "fast", "money"
-    ]
     if not url:
         return False
     url = url.lower()
+    
+    # Проверка ключевых слов
+    scam_url_keywords = [
+        "free", "bonus", "investment", "crypto", "earn", "quick", "fast", "money"
+    ]
     for kw in scam_url_keywords:
         if kw in url:
             return True
+            
+    # Проверка подозрительных доменов
+    for domain in SUSPICIOUS_DOMAINS:
+        if domain in url:
+            return True
+            
     return False
 
-# 📊 ПОЛНАЯ проверка канала
+# 📊 ПОЛНАЯ ПРОФЕССИОНАЛЬНАЯ ПРОВЕРКА КАНАЛА
 def check_scam_factors(chat):
     warnings = []
     scam_score = 0
 
+    # 1. Проверка количества подписчиков
     try:
         members_count = bot.get_chat_members_count(chat.id)
         if members_count < 50:
-            warnings.append(f"Подписчиков всего {members_count} — мало.")
+            warnings.append(f"Подписчиков всего {members_count} — подозрительно мало.")
             scam_score += 1
-    except:
-        pass
+        elif members_count > 100000 and members_count % 1000 == 0:
+            warnings.append(f"Слишком ровное количество подписчиков ({members_count}) — возможны боты.")
+            scam_score += 1
+    except Exception as e:
+        warnings.append(f"⚠ Не удалось проверить количество подписчиков: {str(e)}")
 
-    if contains_scam_keywords(chat.title):
-        warnings.append("В названии канала есть подозрительные слова.")
+    # 2. Проверка названия
+    title = chat.title
+    if contains_scam_keywords(title):
+        warnings.append(f"В названии '{title}' есть подозрительные слова.")
         scam_score += 2
+    
+    # 3. Проверка эмодзи в названии
+    emoji_count = sum(1 for char in title if char in "🎉🚀🔥💸💰💵💯🆓🤑💎✨🌟📈")
+    if emoji_count > 3:
+        warnings.append(f"Слишком много эмодзи в названии ({emoji_count}) — признак агрессивного маркетинга.")
+        scam_score += 1
 
+    # 4. Проверка описания
     try:
         description = bot.get_chat(chat.id).description
-        if description and contains_scam_keywords(description):
-            warnings.append("В описании канала есть подозрительные слова.")
-            scam_score += 2
-    except:
-        pass
+        if description:
+            if contains_scam_keywords(description):
+                warnings.append("В описании найдены подозрительные слова.")
+                scam_score += 2
+            
+            # Проверка на контактные данные (признак мошенников)
+            if re.search(r"\b(контакт|пишите|direct|личка|@|telegram\.me|whatsapp|viber)\b", description, re.IGNORECASE):
+                warnings.append("В описании просят связаться лично — типичный признак мошенников.")
+                scam_score += 2
+                
+            # Проверка на срочность
+            if re.search(r"\b(срочно|быстро|успей|последний шанс|ограничено)\b", description, re.IGNORECASE):
+                warnings.append("Используется давление через срочность — техника мошенников.")
+                scam_score += 1
+    except Exception as e:
+        warnings.append(f"⚠ Не удалось проверить описание: {str(e)}")
 
+    # 5. Проверка пригласительной ссылки
     try:
         invite_link = bot.export_chat_invite_link(chat.id)
-        if invite_link and check_url_scammy(invite_link):
-            warnings.append("Ссылка канала содержит подозрительные слова.")
-            scam_score += 1
-    except:
-        pass
+        if invite_link:
+            if check_url_scammy(invite_link):
+                warnings.append("Ссылка приглашения содержит подозрительные слова.")
+                scam_score += 1
+            
+            # Проверка на сокращенные URL
+            if any(domain in invite_link for domain in SUSPICIOUS_DOMAINS):
+                warnings.append("Используется сокращенная ссылка — может скрывать фишинговый URL.")
+                scam_score += 1
+    except Exception as e:
+        warnings.append(f"⚠ Не удалось проверить пригласительную ссылку: {str(e)}")
 
+    # 6. Проверка аватарки
     try:
         if bot.get_chat(chat.id).photo is None:
-            warnings.append("У канала нет аватарки.")
+            warnings.append("Отсутствует аватарка — признак временного канала.")
             scam_score += 1
+    except Exception as e:
+        warnings.append(f"⚠ Не удалось проверить аватарку: {str(e)}")
+
+    # 7. Проверка закреплённого сообщения
+    try:
+        pinned_msg = bot.get_chat(chat.id).pinned_message
+        if pinned_msg is None:
+            warnings.append("Нет закреплённого сообщения — необычно для нормального канала.")
+            scam_score += 1
+        elif pinned_msg.text:
+            # Проверка закрепленного сообщения на скам-содержимое
+            if contains_scam_keywords(pinned_msg.text):
+                warnings.append("В закреплённом сообщении найдены подозрительные слова.")
+                scam_score += 2
+                
+            # Проверка на просьбы перевести деньги
+            if re.search(r"\b(переведите|оплатите|купите|взнос|инвестируйте)\b", pinned_msg.text, re.IGNORECASE):
+                warnings.append("В закреплённом сообщении просят деньги — явный признак скама.")
+                scam_score += 3
+    except Exception as e:
+        warnings.append(f"⚠ Не удалось проверить закрепленное сообщение: {str(e)}")
+
+    # 8. Проверка даты создания канала (если доступно)
+    try:
+        if hasattr(chat, 'date'):
+            creation_date = datetime.datetime.fromtimestamp(chat.date)
+            channel_age = (datetime.datetime.now() - creation_date).days
+            
+            if channel_age < 7:
+                warnings.append(f"Канал создан очень недавно ({channel_age} дней назад) — высокий риск.")
+                scam_score += 2
+            elif channel_age < 30:
+                warnings.append(f"Канал создан недавно ({channel_age} дней назад) — средний риск.")
+                scam_score += 1
     except:
         pass
 
+    # 9. Проверка на скрытую рекламу
     try:
-        if bot.get_chat(chat.id).pinned_message is None:
-            warnings.append("У канала нет закреплённого сообщения.")
-            scam_score += 1
+        # Проверка последних сообщений (если доступно)
+        messages = bot.get_chat_history(chat.id, limit=5)
+        scam_message_count = 0
+        
+        for msg in messages:
+            if msg.text and contains_scam_keywords(msg.text):
+                scam_message_count += 1
+        
+        if scam_message_count >= 3:
+            warnings.append(f"В последних сообщениях найдены подозрительные слова ({scam_message_count}/5).")
+            scam_score += 2
     except:
+        # Обычно недоступно без админских прав
         pass
 
     return warnings, scam_score
@@ -209,19 +303,43 @@ def start_handler(message):
                 photo,
                 caption=(
                     "✨✨✨✨✨✨✨✨✨✨\n"
-                    "         🤖 Этот бот умеет:         \n"
+                    "         🤖 ScamDetector Bot         \n"
                     "-----------------------------------\n"
-                    "🔍 Проверять каналы на скам\n"
-                    "👍 Позволяет голосовать за канал\n"
-                    "📊 Показывать статистику голосов\n"
-                    "🛡 Помогать избегать мошенников\n"
+                    "❗ Важно:\n"
+                    "Бот показывает вероятность скама на основе автоматической проверки и голосования сообщества. "
+                    "Всегда проверяйте информацию самостоятельно!"
+                    "🔍 Проверяю каналы на признаки скама\n"
+                    "👍 Система голосования сообщества\n"
+                    "📊 Статистика по каналам\n"
+                    "🛡 Помогаю избегать мошенников\n"
                     "-----------------------------------\n"
-                    "Отправь @username канала, чтобы проверить его!\n"
-                    "Отправь /status @username, чтобы узнать статус!"
-                )
+                    "Просто отправь мне @username канала!\n\n"
+                    "📌 Основные команды:\n"
+                    "/start - показать это сообщение\n"
+                    "/status @канал - показать статус канала\n"
+                    "/help - справка по использованию"
+                ),
+                parse_mode="Markdown"
             )
     except Exception as e:
-        bot.reply_to(message, "Не удалось отправить стартовую картинку.")
+        bot.reply_to(message, "👋 Привет! Я бот для проверки каналов на скам. Просто отправь мне @username канала, который хочешь проверить!")
+
+# 📘 Команда /help
+@bot.message_handler(commands=["help"])
+def help_handler(message):
+    help_text = (
+        "🆘 Помощь по боту\n\n"
+        "🔍 Как проверить канал:\n"
+        "Просто отправь @username канала (например, @example)\n\n"
+        "📊 Команды:\n"
+        "/start - начать работу с ботом\n"
+        "/status @канал - показать статус канала\n"
+        "/help - показать эту справку\n\n"
+        "❗ Важно:\n"
+        "Бот показывает вероятность скама на основе автоматической проверки и голосования сообщества. "
+        "Всегда проверяйте информацию самостоятельно!"
+    )
+    bot.reply_to(message, help_text, parse_mode="Markdown")
 
 # 📦 Обработка @тегов каналов
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
@@ -239,7 +357,7 @@ def channel_check_handler(message):
         try:
             chat = bot.get_chat(channel_tag)
         except Exception as e:
-            bot.reply_to(message, "❌ Не удалось получить данные канала. Возможно, канал не существует или бот не имеет к нему доступа.")
+            bot.reply_to(message, "❌ Не удалось получить данные канала. Возможно:\n- Канал не существует\n- Бот заблокирован в канале\n- Ошибка доступа")
             return
 
         warnings, scam_score = check_scam_factors(chat)
@@ -248,28 +366,45 @@ def channel_check_handler(message):
         init_votes_for_channel(channel_username)
         scam_votes, not_scam_votes = get_vote_stats(channel_username)
 
-        if scam_score >= 3:
-            verdict = "🚨 Высокая вероятность скама!"
-        elif scam_score == 0:
-            verdict = "✅ Канал выглядит безопасным."
+        # Определение уровня риска
+        if scam_score >= 8:
+            verdict = "🚨🚨 КРИТИЧЕСКИЙ РИСК! Высокая вероятность скама!"
+            risk_emoji = "🔴🔴🔴"
+        elif scam_score >= 5:
+            verdict = "⚠⚠ ВЫСОКИЙ РИСК! Вероятно скам!"
+            risk_emoji = "🔴🔴"
+        elif scam_score >= 3:
+            verdict = "⚠ СРЕДНИЙ РИСК! Есть подозрительные признаки!"
+            risk_emoji = "🟠"
+        elif scam_score > 0:
+            verdict = "🟡 НИЗКИЙ РИСК! Незначительные проблемы."
+            risk_emoji = "🟡"
         else:
-            verdict = "⚠ Есть подозрительные признаки."
+            verdict = "✅ БЕЗОПАСНЫЙ КАНАЛ! Риски не обнаружены."
+            risk_emoji = "🟢"
 
-        report_lines = [verdict]
+        # Формирование отчета
+        report_lines = [
+            f"{risk_emoji} {verdict}",
+            f"🔍 Канал: {channel_tag}",
+            f"📊 Скам-индекс: {scam_score}/10"
+        ]
         
         if warnings:
-            report_lines.append("\n⚠ Причины:")
-            for i, warning in enumerate(warnings, 1):
+            report_lines.append("\n🔎 Обнаруженные проблемы:")
+            for i, warning in enumerate(warnings[:5], 1):
                 report_lines.append(f"{i}. {warning}")
+            if len(warnings) > 5:
+                report_lines.append(f"🔸 ...и еще {len(warnings)-5} других проблем")
         
-        report_lines.append(f"\n📊 Скам-баллы: {scam_score}/7")
-        report_lines.append(f"🚫 Голосов 'Скам': {scam_votes}")
-        report_lines.append(f"✅ Голосов 'Не скам': {not_scam_votes}")
+        report_lines.append("\n👥 Голосование сообщества:")
+        report_lines.append(f"🚫 Скам: {scam_votes}  |  ✅ Не скам: {not_scam_votes}")
+        
+        report_lines.append("\n❗ Важно: Это автоматическая оценка. Всегда проверяйте информацию самостоятельно!")
 
         report_text = "\n".join(report_lines)
 
-        bot.reply_to(message, report_text)
-
+        # Кнопки голосования
         markup = types.InlineKeyboardMarkup(row_width=2)
         btn_scam = types.InlineKeyboardButton(
             "🚫 Скам", callback_data=f"scam|{channel_username}")
@@ -279,7 +414,8 @@ def channel_check_handler(message):
         
         bot.send_message(
             message.chat.id, 
-            "Как ты думаешь, это скам?", 
+            report_text,
+            parse_mode="Markdown",
             reply_markup=markup
         )
 
@@ -292,7 +428,7 @@ def channel_check_handler(message):
         })
     except Exception as e:
         print(f"Ошибка при обработке канала: {e}")
-        bot.reply_to(message, "⚠ Произошла ошибка при обработке запроса. Пожалуйста, попробуйте позже.")
+        bot.reply_to(message, "⚠ Произошла внутренняя ошибка при обработке запроса. Пожалуйста, попробуйте позже.")
 
 # ✅ Обработка голосов
 @bot.callback_query_handler(func=lambda call: True)
@@ -314,10 +450,10 @@ def handle_vote(call):
 
         success = update_vote(channel_username, user_id, vote_type)
         if not success:
-            bot.answer_callback_query(call.id, "❗ Ты уже голосовал за этот канал.")
+            bot.answer_callback_query(call.id, "❗ Вы уже голосовали за этот канал.")
             return
 
-        bot.answer_callback_query(call.id, "✅ Спасибо за голос!")
+        bot.answer_callback_query(call.id, "✅ Ваш голос учтен! Спасибо!")
         
         scam_votes, not_scam_votes = get_vote_stats(channel_username)
         stat_text = (
@@ -337,15 +473,16 @@ def handle_vote(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=stat_text,
+                text=call.message.text + f"\n\n{stat_text}",
+                parse_mode="Markdown",
                 reply_markup=markup
             )
         except Exception as e:
-            bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.", reply_markup=markup)
+            bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбновите сообщение вручную.", reply_markup=markup)
     except Exception as e:
         print(f"Ошибка при обработке голоса: {e}")
         try:
-            bot.answer_callback_query(call.id, "⚠ Произошла ошибка. Попробуйте позже.")
+            bot.answer_callback_query(call.id, "⚠ Ошибка обработки. Попробуйте позже.")
         except:
             pass
 
@@ -355,7 +492,7 @@ def status_handler(message):
     try:
         parts = message.text.split()
         if len(parts) != 2 or not parts[1].startswith("@"):
-            bot.reply_to(message, "❌ Используй формат: /status @канал")
+            bot.reply_to(message, "❌ Используйте формат: /status @канал")
             return
 
         channel_tag = parts[1]
@@ -369,29 +506,41 @@ def status_handler(message):
             channel_id = chat.id
             warnings, scam_score = check_scam_factors(chat)
         except Exception as e:
-            bot.reply_to(message, "❌ Не удалось получить данные канала. Возможно, канал не существует или бот не имеет к нему доступа.")
+            bot.reply_to(message, "❌ Не удалось получить данные канала. Проверьте правильность @username.")
             return
 
+        # Определение уровня риска
+        if scam_score >= 8:
+            risk_level = "КРИТИЧЕСКИЙ РИСК 🔴🔴🔴"
+        elif scam_score >= 5:
+            risk_level = "ВЫСОКИЙ РИСК 🔴🔴"
+        elif scam_score >= 3:
+            risk_level = "СРЕДНИЙ РИСК 🟠"
+        elif scam_score > 0:
+            risk_level = "НИЗКИЙ РИСК 🟡"
+        else:
+            risk_level = "БЕЗОПАСНЫЙ 🟢"
+
         msg = (
-            f"📊 Статистика канала {channel_tag}\n"
+            f"📊 Статус канала {channel_tag}\n"
             f"🔖 Название: {title}\n"
-            f"🆔 ID: {channel_id}\n\n"
-            f"🔍 Результаты проверки:\n"
-            f"⚠ Скам-баллы: {scam_score}/7\n"
+            f"🆔 ID: {channel_id}\n"
+            f"📈 Скам-индекс: {scam_score}/10\n"
+            f"⚠ Уровень риска: {risk_level}\n"
         )
         
         # Добавляем причины (первые 3)
         if warnings:
-            msg += f"\n🔸 Причины ({len(warnings)}):\n"
+            msg += f"\n🔎 Основные проблемы:\n"
             for i, warning in enumerate(warnings[:3], 1):
-                msg += f"{i}. {warning}\n"
+                msg += f"▫ {warning}\n"
             if len(warnings) > 3:
-                msg += f"🔸 ...и еще {len(warnings)-3} других причин\n"
+                msg += f"▫ ...и еще {len(warnings)-3} проблем\n"
         
         msg += (
-            f"\n🗳 Голосование сообщества:\n"
-            f"🚫 Голосов 'Скам': {scam_votes}\n"
-            f"✅ Голосов 'Не скам': {not_scam_votes}"
+            f"\n👥 Голосование сообщества:\n"
+            f"🚫 Скам: {scam_votes}  |  ✅ Не скам: {not_scam_votes}\n\n"
+            f"❗ Результаты автоматической проверки. Требует вашего внимания!"
         )
 
         markup = types.InlineKeyboardMarkup(row_width=2)
@@ -401,7 +550,7 @@ def status_handler(message):
             "✅ Не скам", callback_data=f"not_scam|{channel_username}")
         markup.add(btn_scam, btn_not_scam)
 
-        bot.reply_to(message, msg, reply_markup=markup)
+        bot.reply_to(message, msg, parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
         print(f"Ошибка в команде /status: {e}")
         bot.reply_to(message, "⚠ Произошла ошибка при обработке команды. Пожалуйста, попробуйте позже.")
@@ -411,7 +560,7 @@ def status_handler(message):
 def export_handler(message):
     try:
         if message.from_user.id != ADMIN_ID:
-            bot.reply_to(message, "⛔ У тебя нет доступа к этой команде.")
+            bot.reply_to(message, "⛔ У вас нет доступа к этой команде.")
             return
 
         # Отправляем файл с голосами
@@ -435,7 +584,7 @@ def export_handler(message):
 # 📥 Обработка всех остальных сообщений
 @bot.message_handler(func=lambda m: True)
 def fallback(message):
-    bot.reply_to(message, "Пожалуйста, отправь тег канала (@example) для проверки или используй /status @канал.")
+    bot.reply_to(message, "👋 Для проверки канала отправьте его @username (например, @example)\nИспользуйте /help для справки")
 
 # 🚀 Запуск бота
 if __name__ == "__main__":
