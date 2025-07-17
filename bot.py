@@ -59,7 +59,7 @@ SCAM_KEYWORDS = [
 # =============================================
 class Database:
     def _init_(self):
-        self.conn = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
+        self.conn = psycopg2.connect(os.getenv('postgresql://scca_user:W5nqM7EuKMMRwCITMHkTkqkAotfgBGE2@dpg-d1se4oje5dus739jqva0-a.oregon-postgres.render.com/scca'), sslmode='require')
         self.create_tables()
     
     def create_tables(self):
