@@ -1,1 +1,24 @@
-{}
+{
+  "username": {
+    "scam": 0,
+    "not_scam": 1,
+    "voters": [
+      "1465940524"
+    ]
+  },
+  "telegram": {
+    "scam": 0,
+    "not_scam": 1,
+    "voters": [
+      "1465940524"
+    ]
+  },
+  "mir_supercell": {
+    "scam": 0,
+    "not_scam": 2,
+    "voters": [
+      "7684446726",
+      "146594052444444444444444444"
+    ]
+  }
+}
