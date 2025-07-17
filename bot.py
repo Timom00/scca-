@@ -8,16 +8,14 @@ import re
 import datetime
 from telebot import types
 import os
+import psycopg2
+from psycopg2 import sql
+import io
 
 # 🔐 Токен бота и ID администратора
 TOKEN = "7660678589:AAG5Bo3rAodVO_YiHs4f6jPniKQt8ZBVU1U"
 ADMIN_ID = 1465940524
 bot = telebot.TeleBot(TOKEN)
-
-# 📁 Файлы для хранения данных
-SCAMLIST_FILE = "scamlist.json"
-VOTES_FILE = "votes.json"
-REPORTS_FILE = "reports.json"
 
 # ❗ Полный список слов для определения скама
 SCAM_KEYWORDS = [
@@ -57,60 +55,179 @@ SCAM_KEYWORDS = [
 ]
 
 # =============================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ (ПЕРЕРАБОТАННЫЕ)
+# 🗄 КЛАСС ДЛЯ РАБОТЫ С POSTGRESQL
 # =============================================
-def load_json(file):
-    """Загружает данные из JSON-файла"""
-    if os.path.exists(file):
+class Database:
+    def _init_(self):
+        self.conn = psycopg2.connect(os.getenv('DATABASE_URL'), sslmode='require')
+        self.create_tables()
+    
+    def create_tables(self):
+        with self.conn.cursor() as cur:
+            # Таблица для голосов
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS votes (
+                    id SERIAL PRIMARY KEY,
+                    channel_username TEXT NOT NULL UNIQUE,
+                    scam_votes INTEGER NOT NULL DEFAULT 0,
+                    not_scam_votes INTEGER NOT NULL DEFAULT 0
+                );
+            """)
+            
+            # Таблица для голосовавших пользователей
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS voters (
+                    id SERIAL PRIMARY KEY,
+                    vote_id INTEGER NOT NULL REFERENCES votes(id) ON DELETE CASCADE,
+                    user_id BIGINT NOT NULL,
+                    UNIQUE(vote_id, user_id)
+                );
+            """)
+            
+            # Таблица для отчетов
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS reports (
+                    id SERIAL PRIMARY KEY,
+                    channel_tag TEXT NOT NULL,
+                    check_date TIMESTAMP NOT NULL,
+                    scam_score INTEGER NOT NULL,
+                    warnings JSONB NOT NULL,
+                    user_id BIGINT NOT NULL
+                );
+            """)
+            self.conn.commit()
+    
+    def init_votes_for_channel(self, channel_username):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO votes (channel_username) 
+                VALUES (%s)
+                ON CONFLICT (channel_username) DO NOTHING;
+            """, (channel_username,))
+            self.conn.commit()
+    
+    def update_vote(self, channel_username, user_id, vote_type):
         try:
-            with open(file, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
+            with self.conn.cursor() as cur:
+                # Получаем ID голосования
+                cur.execute("SELECT id FROM votes WHERE channel_username = %s", (channel_username,))
+                vote_row = cur.fetchone()
+                if not vote_row:
+                    return False
+                vote_id = vote_row[0]
+                
+                # Проверяем, голосовал ли уже
+                cur.execute("""
+                    SELECT 1 FROM voters 
+                    WHERE vote_id = %s AND user_id = %s
+                """, (vote_id, user_id))
+                if cur.fetchone():
+                    return False
+                
+                # Добавляем голос
+                if vote_type == "scam":
+                    cur.execute("""
+                        UPDATE votes 
+                        SET scam_votes = scam_votes + 1 
+                        WHERE id = %s
+                    """, (vote_id,))
+                else:
+                    cur.execute("""
+                        UPDATE votes 
+                        SET not_scam_votes = not_scam_votes + 1 
+                        WHERE id = %s
+                    """, (vote_id,))
+                
+                # Фиксируем голосующего
+                cur.execute("""
+                    INSERT INTO voters (vote_id, user_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT DO NOTHING
+                """, (vote_id, user_id))
+                
+                self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Database error: {e}")
+            self.conn.rollback()
+            return False
+    
+    def get_vote_stats(self, channel_username):
+        with self.conn.cursor() as cur:
+            cur.execute("""
+                SELECT scam_votes, not_scam_votes 
+                FROM votes 
+                WHERE channel_username = %s
+            """, (channel_username,))
+            result = cur.fetchone()
+            return result or (0, 0)
+    
+    def save_report(self, report_data):
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO reports (
+                        channel_tag, check_date, scam_score, warnings, user_id
+                    ) VALUES (%s, %s, %s, %s, %s)
+                """, (
+                    report_data['channel_tag'],
+                    datetime.datetime.fromisoformat(report_data['check_date']),
+                    report_data['scam_score'],
+                    json.dumps(report_data['warnings']),
+                    report_data['user_id']
+                ))
+                self.conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving report: {e}")
+            self.conn.rollback()
+            return False
+
+    def export_votes(self):
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        v.channel_username,
+                        v.scam_votes,
+                        v.not_scam_votes,
+                        ARRAY_AGG(vr.user_id) AS voters
+                    FROM votes v
+                    LEFT JOIN voters vr ON vr.vote_id = v.id
+                    GROUP BY v.id
+                """)
+                results = {}
+                for row in cur.fetchall():
+                    results[row[0]] = {
+                        "scam": row[1],
+                        "not_scam": row[2],
+                        "voters": row[3] if row[3] else []
+                    }
+                return results
+        except Exception as e:
+            print(f"Error exporting votes: {e}")
             return {}
-    return {}
 
-def save_json(file, data):
-    """Сохраняет данные в JSON-файл"""
-    with open(file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    def export_reports(self):
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT 
+                        id, channel_tag, check_date, 
+                        scam_score, warnings, user_id 
+                    FROM reports
+                """)
+                columns = [desc[0] for desc in cur.description]
+                return [
+                    dict(zip(columns, row)) 
+                    for row in cur.fetchall()
+                ]
+        except Exception as e:
+            print(f"Error exporting reports: {e}")
+            return []
 
-def init_votes_for_channel(channel_username):
-    """Инициализирует запись для канала, если её нет"""
-    votes = load_json(VOTES_FILE)
-    if channel_username not in votes:
-        votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
-        save_json(VOTES_FILE, votes)
-    return votes[channel_username]
-
-def update_vote(channel_username, user_id, vote_type):
-    """Обновляет голосование с проверкой уникальности"""
-    votes = load_json(VOTES_FILE)
-    
-    # Инициализируем, если записи нет
-    if channel_username not in votes:
-        votes[channel_username] = {"scam": 0, "not_scam": 0, "voters": []}
-    
-    # Проверяем, голосовал ли уже пользователь
-    if str(user_id) in votes[channel_username]["voters"]:
-        return False
-
-    if vote_type == "scam":
-        votes[channel_username]["scam"] += 1
-    else:
-        votes[channel_username]["not_scam"] += 1
-        
-    # Сохраняем ID пользователя как строку
-    votes[channel_username]["voters"].append(str(user_id))
-    
-    save_json(VOTES_FILE, votes)
-    return True
-
-def get_vote_stats(channel_username):
-    """Возвращает текущую статистику голосов"""
-    votes = load_json(VOTES_FILE)
-    if channel_username in votes:
-        return votes[channel_username]["scam"], votes[channel_username]["not_scam"]
-    return 0, 0
+# Инициализируем базу данных
+db = Database()
 # =============================================
 
 # 🔍 Проверка текста на скам-ключи
@@ -185,20 +302,6 @@ def check_scam_factors(chat):
 
     return warnings, scam_score
 
-# 💾 Сохранение отчёта
-def save_report(report):
-    try:
-        with open(REPORTS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        # Убедимся, что data - это список
-        if not isinstance(data, list):
-            data = []
-    except:
-        data = []
-    data.append(report)
-    with open(REPORTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
 # 🚀 Команда /start
 @bot.message_handler(commands=["start"])
 def start_handler(message):
@@ -225,7 +328,6 @@ def start_handler(message):
                     "❗ Важно:\n"
                     "Бот показывает вероятность скама на основе автоматической проверки и голосования сообщества. "
                     "Всегда проверяйте информацию самостоятельно!"
-
                 )
             )
     except Exception as e:
@@ -248,8 +350,7 @@ def help_handler(message):
     )
     bot.reply_to(message, help_text, parse_mode="Markdown")
 
-
-# 📦 Обработка @тегов каналов (ИСПРАВЛЕНО ФОРМИРОВАНИЕ CALLBACK_DATA)
+# 📦 Обработка @тегов каналов
 @bot.message_handler(func=lambda m: m.text and m.text.startswith("@"))
 def channel_check_handler(message):
     channel_tag = message.text.strip()
@@ -270,8 +371,8 @@ def channel_check_handler(message):
     warnings, scam_score = check_scam_factors(chat)
     
     channel_username = channel_tag[1:].lower()
-    init_votes_for_channel(channel_username)
-    scam_votes, not_scam_votes = get_vote_stats(channel_username)
+    db.init_votes_for_channel(channel_username)
+    scam_votes, not_scam_votes = db.get_vote_stats(channel_username)
 
     if scam_score >= 3:
         verdict = "🚨 Высокая вероятность скама!"
@@ -295,8 +396,6 @@ def channel_check_handler(message):
     bot.reply_to(message, report_text)
 
     markup = types.InlineKeyboardMarkup(row_width=2)
-    
-    # ИСПРАВЛЕНО: используем новый формат callback_data
     btn_scam = types.InlineKeyboardButton(
         "🚫 Скам", callback_data=f"scam|{channel_username}")
     btn_not_scam = types.InlineKeyboardButton(
@@ -309,7 +408,7 @@ def channel_check_handler(message):
         reply_markup=markup
     )
 
-    save_report({
+    db.save_report({
         "channel_tag": channel_tag,
         "check_date": datetime.datetime.utcnow().isoformat(),
         "scam_score": scam_score,
@@ -317,15 +416,13 @@ def channel_check_handler(message):
         "user_id": message.from_user.id
     })
 
-# ✅ Обработка голосов (ПОЛНОСТЬЮ ПЕРЕРАБОТАННАЯ)
+# ✅ Обработка голосов
 @bot.callback_query_handler(func=lambda call: True)
 def handle_vote(call):
-    # Проверяем формат callback_data
     if '|' not in call.data:
         bot.answer_callback_query(call.id, "❗ Ошибка данных голосования.")
         return
         
-    # Разбиваем данные на тип голоса и username канала
     vote_type, channel_username = call.data.split('|', 1)
     
     if vote_type not in ['scam', 'not_scam']:
@@ -333,15 +430,15 @@ def handle_vote(call):
         return
 
     user_id = call.from_user.id
-
-    success = update_vote(channel_username, user_id, vote_type)
+    success = db.update_vote(channel_username, user_id, vote_type)
+    
     if not success:
         bot.answer_callback_query(call.id, "❗ Ты уже голосовал за этот канал.")
         return
 
     bot.answer_callback_query(call.id, "✅ Спасибо за голос!")
     
-    scam_votes, not_scam_votes = get_vote_stats(channel_username)
+    scam_votes, not_scam_votes = db.get_vote_stats(channel_username)
     stat_text = (
         f"📊 Обновленная статистика для @{channel_username}:\n"
         f"🚫 Скам: {scam_votes}\n"
@@ -365,7 +462,7 @@ def handle_vote(call):
     except Exception as e:
         bot.send_message(call.message.chat.id, f"{stat_text}\n\nОбнови сообщение вручную.", reply_markup=markup)
 
-# 📊 Команда /status (ИСПРАВЛЕННЫЙ ФОРМАТ CALLBACK_DATA)
+# 📊 Команда /status
 @bot.message_handler(commands=["status"])
 def status_handler(message):
     parts = message.text.split()
@@ -376,7 +473,7 @@ def status_handler(message):
     channel_tag = parts[1]
     channel_username = channel_tag[1:].lower()
     
-    scam_votes, not_scam_votes = get_vote_stats(channel_username)
+    scam_votes, not_scam_votes = db.get_vote_stats(channel_username)
 
     try:
         chat = bot.get_chat(channel_tag)
@@ -400,14 +497,7 @@ def status_handler(message):
         f"✅ Голосов 'Не скам': {not_scam_votes}"
     )
 
-    #markup = types.InlineKeyboardMarkup(row_width=2)
-    #btn_scam = types.InlineKeyboardButton(
-     #   "🚫 Скам", callback_data=f"scam|{channel_username}")
-    #btn_not_scam = types.InlineKeyboardButton(
-     #   "✅ Не скам", callback_data=f"not_scam|{channel_username}")
-    #markup.add(btn_scam, btn_not_scam)
-
-    bot.reply_to(message, msg)#, reply_markup=markup)
+    bot.reply_to(message, msg)
 
 # 📤 Команда /export (только для администратора)
 @bot.message_handler(commands=["export"])
@@ -417,19 +507,26 @@ def export_handler(message):
         return
 
     try:
-        # Отправляем файл с голосами
-        if os.path.exists(VOTES_FILE):
-            with open(VOTES_FILE, "rb") as v:
-                bot.send_document(message.chat.id, v, caption="🗳 Файл голосований")
-        else:
-            bot.reply_to(message, "Файл голосований не найден.")
+        # Формируем данные для экспорта
+        votes_data = db.export_votes()
+        reports_data = db.export_reports()
         
-        # Отправляем файл с отчетами
-        if os.path.exists(REPORTS_FILE):
-            with open(REPORTS_FILE, "rb") as r:
-                bot.send_document(message.chat.id, r, caption="📋 Файл отчетов")
-        else:
-            bot.reply_to(message, "Файл отчетов не найден.")
+        # Создаем файлы в памяти
+        votes_json = json.dumps(votes_data, ensure_ascii=False, indent=2).encode('utf-8')
+        reports_json = json.dumps(reports_data, ensure_ascii=False, indent=2, default=str).encode('utf-8')
+        
+        # Отправляем файлы
+        bot.send_document(
+            message.chat.id, 
+            ('votes.json', io.BytesIO(votes_json)),
+            caption="🗳 Экспорт голосов"
+        )
+        
+        bot.send_document(
+            message.chat.id, 
+            ('reports.json', io.BytesIO(reports_json)),
+            caption="📋 Экспорт отчетов"
+        )
             
     except Exception as e:
         bot.reply_to(message, f"❌ Ошибка при экспорте: {e}")
@@ -441,19 +538,6 @@ def fallback(message):
 
 # 🚀 Запуск бота
 if __name__ == "__main__":
-    # Инициализация файлов при первом запуске
-    if not os.path.exists(VOTES_FILE):
-        with open(VOTES_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-    
-    if not os.path.exists(REPORTS_FILE):
-        with open(REPORTS_FILE, "w", encoding="utf-8") as f:
-            json.dump([], f)
-    
-    if not os.path.exists(SCAMLIST_FILE):
-        with open(SCAMLIST_FILE, "w", encoding="utf-8") as f:
-            json.dump({}, f)
-    
     keep_alive()
-    print("Бот запущен...")
+    print("Бот запущен с PostgreSQL...")
     bot.infinity_polling()
